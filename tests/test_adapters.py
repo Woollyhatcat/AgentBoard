@@ -53,7 +53,7 @@ class AdapterTests(unittest.TestCase):
                     "type": "text", "type_version": "1.0", "title": "真实 MCP 进程", "props": {}, "state": {"text": "中文🙂"}}}}},
         ]
         entry = Path(__file__).resolve().parent.parent / "scripts" / "mcp_server.py"
-        result = subprocess.run([sys.executable, str(entry), "--data-dir", self.temp.name],
+        result = subprocess.run([sys.executable, str(entry), "--no-web", "--data-dir", self.temp.name],
             input="\n".join(json.dumps(item, ensure_ascii=False) for item in script) + "\n", encoding="utf-8",
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15, cwd=self.temp.name)
         self.assertEqual(result.returncode, 0, result.stderr)

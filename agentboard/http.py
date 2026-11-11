@@ -2,15 +2,29 @@
 
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import os
 from pathlib import Path
 import secrets
+import socket
+from threading import Thread
 from urllib.parse import urlsplit, unquote
 
 from .mcp import reject_constant
 from .service import USER, LIMITS, dump
 from .schema import BusinessError
+from .runtime import storage_id
 
 STATIC = Path(__file__).parent / "web"
+
+
+class LoopbackServer(ThreadingHTTPServer):
+    # On Windows SO_REUSEADDR can allow two live servers to bind the same port.
+    allow_reuse_address = os.name != "nt"
+
+    def server_bind(self):
+        if os.name == "nt":
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
 
 def create_server(service, host="127.0.0.1", port=8765):
@@ -55,6 +69,9 @@ def create_server(service, host="127.0.0.1", port=8765):
             path = urlsplit(self.path).path
             if path == "/api/session":
                 self._json(200, {"session": session, "board_id": "board_local"})
+            elif path == "/api/health":
+                self._json(200, {"service": "agentboard", "status": "ready", "board_id": "board_local",
+                                 "storage_id": storage_id(service.data_dir)})
             elif path.startswith("/api/assets/"):
                 parts = path.strip("/").split("/")
                 if len(parts) not in (3, 4) or (len(parts) == 4 and parts[3] != "download"):
@@ -94,6 +111,10 @@ def create_server(service, host="127.0.0.1", port=8765):
                 self.connection.settimeout(30)
                 args = json.loads(self.rfile.read(length), parse_constant=reject_constant)
                 path = urlsplit(self.path).path
+                if path == "/api/shutdown":
+                    self._json(200, {"ok": True})
+                    Thread(target=self.server.shutdown, daemon=True).start()
+                    return
                 if not path.startswith("/api/tools/"):
                     self._json(404, {"error": "操作地址不存在。"})
                     return
@@ -108,6 +129,6 @@ def create_server(service, host="127.0.0.1", port=8765):
             if args and str(args[1] if len(args) > 1 else "").startswith("5"):
                 super().log_message(format, *args)
 
-    server = ThreadingHTTPServer((host, port), Handler)
+    server = LoopbackServer((host, port), Handler)
     server.daemon_threads = True
     return server

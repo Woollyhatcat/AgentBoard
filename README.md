@@ -12,6 +12,17 @@ python -m agentboard serve
 
 打开 [本地黑板](http://127.0.0.1:8765)。首次启动为空看板，可添加卡片或点击「添加 PID 协作示例」。停止服务使用 `Ctrl+C`。
 
+使用 MCP 时，初始化连接会自动在后台启动网页；相同端口与数据目录已有 AgentBoard 时直接复用。聊天结束后网页仍保持可用。`get_board_info` 的 `web` 字段返回网页状态与地址；MCP 能读写数据不代表网页必然已就绪，请以此状态为准。
+
+也可以手动管理后台网页服务：
+
+```powershell
+python -m agentboard start
+python -m agentboard stop
+```
+
+`start` 会等到健康检查通过再返回，可重复执行；`stop` 只停止匹配当前数据目录的服务，不删除卡片。日志位于数据目录的 `web.log`。从其他工作目录恢复网页时可执行 `python C:/Tools/AgentBoard/scripts/start_board.py`。自定义数据目录或端口时，`start`、`stop`、MCP 使用相同的 `--data-dir`／`--port`；端口被其他服务或另一块看板占用时明确报错，不接管已有进程。
+
 ```powershell
 # 自定义端口和数据目录
 python -m agentboard serve --port 8765 --data-dir ./data
@@ -38,6 +49,8 @@ python -m agentboard serve --port 8765 --data-dir ./data
 ```
 
 如果客户端找不到 Python，将 `command` 换成 Python 解释器的绝对路径。脚本入口可从任意工作目录启动，不需要客户端支持 `cwd`。可在 args 末尾添加 `--data-dir`、`--agent-id`、`--agent-name`；不同 Agent 使用不同 id，以隔离命令回执。
+
+MCP 默认自动启动网页，使用 `--port` 可指定网页端口。仅需数据工具的无界面集成或测试，可传 `--no-web`。旧的已运行 MCP 进程需要重新连接才能加载新逻辑；已更新的 skill 也会在发现网页不可用时主动调用启动入口恢复页面。
 
 先调用 `list_boards` 确认看板（初始标识为 `board_local`），再用 `get_card_types` 获取字段定义。创建示例：
 
@@ -93,6 +106,8 @@ node --check agentboard/web/app.js
 ```
 
 Python 测试使用临时 SQLite 数据目录，覆盖版本冲突、同时写入、幂等重放、生命周期、跨页一致性、资源撤权与分片、正常重启、HTTP 来源校验、MCP 协议及真实 stdio 子进程。Node 仅用于开发时语法检查，运行产品不需要 Node。
+
+网页启动回归测试还覆盖：真实 MCP 初始化后网页可访问、MCP 退出后网页继续运行、重复／并发启动复用、停止后重启、数据目录冲突保护及停止操作的会话校验。
 
 人工页面验收记录与规格映射见 [doc/implementation-status.md](doc/implementation-status.md)。
 
