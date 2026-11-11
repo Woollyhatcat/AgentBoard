@@ -62,6 +62,8 @@ python -m agentboard serve --port 8765 --data-dir ./data
 
 完整工具：`list_boards`、`get_board_info`、`get_card_types`、`get_card_list`、`read_card`、`get_board_snapshot`、`get_changes`、`push_card`、`edit_card`、`delete_card`、`restore_card`、`get_asset_sources`、`import_asset`、`get_asset_info`、`read_asset`、`get_operation_status`。目录包含 JSON Schema 输入、输出与中文用途说明。
 
+配套的 Agent 使用 skill 位于 [skills/agentboard/SKILL.md](skills/agentboard/SKILL.md)。将 `agentboard` 文件夹复制到用户级 `~/.agents/skills/` 后，可用 `$agentboard` 显式调用，或按其描述自动选用。skill 提供使用指导，MCP 连接仍需按上述方式配置。用户级技能目录与加载方式见 [OpenAI 官方技能文档](https://learn.chatgpt.com/docs/build-skills)。
+
 协议适配依据 MCP 官方 [生命周期](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle)、[stdio 传输](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)和 [Tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools) 规范，实现初始化、工具发现、结构化回执和协议／业务错误分离。当前以 `2025-11-25` 为默认协议版本，并支持 `2025-06-18`、`2025-03-26`、`2024-11-05` 协商；规格中提及的其他协议日期未作为本实现兼容承诺。
 
 ## 首版功能
