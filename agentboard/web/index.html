@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>AgentBoard · 共享工作黑板</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <aside class="rail">
+    <a class="brand" href="/" aria-label="AgentBoard 首页"><span class="brand-icon">a<span>·</span></span> AgentBoard<span class="brand-dot">.</span></a>
+    <div class="workspace-label">个人工作空间 <span>LOCAL</span></div>
+    <nav aria-label="工作区导航">
+      <button class="nav-item active" id="board-nav"><span>▦</span> 共享黑板 <span class="nav-count" id="nav-count">0</span></button>
+      <button class="nav-item" id="activity-btn"><span>◷</span> 最近变更</button>
+      <button class="nav-item" id="trash-btn"><span>♧</span> 回收站 <span class="nav-count" id="trash-count">0</span></button>
+    </nav>
+    <div class="rail-note"><span class="tiny-label">一个持续存在的工作空间</span><p>把资料、参数与结论放在这里，<br>下次和 Agent 接着一起改。</p><button class="text-button" id="connect-btn">连接你的 Agent <span>↗</span></button></div>
+    <div class="rail-bottom"><button class="nav-item" id="settings-btn"><span>⚙</span> 看板设置</button><div class="profile"><span class="avatar">我</span><div>本地工作空间<small>数据保存在这台电脑上</small></div><span class="online-dot"></span></div></div>
+  </aside>
+  <div class="app-shell">
+    <header class="topbar"><div class="breadcrumb">工作空间 <span>/</span> <b>共享黑板</b></div><div class="top-status"><span id="connection" class="status">连接中…</span><span class="divider"></span><button id="copy-board" class="id-button" title="复制看板标识">board_local ⧉</button></div></header>
+    <main>
+      <div class="page-heading"><div><div class="eyebrow">YOUR SHARED WORKSPACE</div><h1 id="board-name">我的工作黑板</h1><p id="board-description">人与 Agent，一起接着做。</p></div><button class="primary" id="add-btn"><span>＋</span> 添加卡片</button></div>
+      <div class="board-toolbar"><div class="view-label"><span>▦</span> 所有卡片 <span class="count" id="card-count">0</span></div><div class="tools"><label class="search"><span>⌕</span><input id="search" type="search" aria-label="搜索标题或完整卡片标识" placeholder="搜索标题或卡片标识"><kbd>/</kbd></label><button class="secondary" id="import-btn">↥ <span>导入资源</span></button></div></div>
+      <div id="offline-banner" class="banner warning" hidden>连接已断开。当前草稿仍在此页面中，恢复连接后将先核对未确认操作。</div>
+      <div class="canvas-wrapper"><div id="canvas" class="canvas" aria-label="卡片画布"></div><section id="empty" class="empty" hidden><div class="empty-art"><span>▤</span><span>☷</span><span>◉</span></div><span class="eyebrow">A LITTLE SPACE FOR YOUR NEXT IDEA</span><h2>从第一张卡片开始</h2><p>记下目标、放入资料，或用控件表达你的想法。<br>连接 Agent 后，它也可以向这块黑板添加和更新卡片。</p><button class="primary" id="first-card-btn">＋ 添加第一张卡片</button><button class="text-button" id="example-btn">添加 PID 协作示例 <span>→</span></button></section><div id="no-results" class="empty compact" hidden><h2>没有找到匹配的卡片</h2><p>试试卡片标题或完整标识。</p><button class="secondary" id="clear-search">清除筛选</button></div></div>
+      <footer class="board-footer"><span><i class="online-dot"></i> <span id="save-status">正在读取看板</span></span><span id="revision">revision 0</span><span>拖动把手整理 · 修改后与 Agent 共享</span></footer>
+    </main>
+  </div>
+  <aside id="inspector" class="inspector" aria-label="卡片属性" hidden></aside>
+  <dialog id="modal"><div class="modal-header"><div><span class="eyebrow" id="modal-eyebrow">AGENTBOARD</span><h2 id="modal-title"></h2></div><button class="icon-button" id="modal-close" aria-label="关闭对话框">×</button></div><div id="modal-body"></div></dialog>
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+</body>
+</html>
