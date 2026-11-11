@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentBoard · 详细功能规格 v0.2</title>
+<style>
+:root{--ink:#20342e;--muted:#60756a;--line:#d9e4dd;--green:#175c48;--bg:#f3f6f3}*{box-sizing:border-box}html{scroll-padding-top:24px}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.85 "Microsoft YaHei","PingFang SC",system-ui,sans-serif}a{color:var(--green);text-underline-offset:4px}a:focus-visible{outline:3px solid #bd8329;outline-offset:3px}.shell{max-width:1480px;display:grid;grid-template-columns:230px minmax(0,1fr);gap:34px;margin:auto;padding:32px 36px 70px}aside{position:sticky;top:24px;align-self:start;max-height:calc(100vh - 48px);overflow:auto}.brand{font-size:23px;font-weight:750}.subtitle{font-size:12px;color:var(--muted);margin:4px 0 24px}nav a{display:block;font-size:13px;text-decoration:none;color:var(--muted);border-left:2px solid var(--line);padding:6px 11px}nav a:hover{border-color:var(--green);background:#e6efe8}main{min-width:0}header{background:#153f32;color:white;padding:38px 42px;border-radius:14px}header h1{font-size:34px;line-height:1.4;margin:10px 0 16px}header p{color:#deece3;max-width:780px}.kicker{font-size:12px;letter-spacing:2px;color:#b4d6c2}.badge{display:inline-block;border:1px solid #6a8b78;padding:3px 10px;border-radius:20px;font-size:12px;margin:6px 6px 0 0}section{background:white;border:1px solid var(--line);border-radius:12px;padding:30px 34px;margin:22px 0}h2{font-size:24px;line-height:1.5;margin:0 0 18px}h3{font-size:18px;margin:25px 0 10px}h4{font-size:15px;margin:20px 0 6px}p{margin:10px 0}li{margin:5px 0}ul,ol{padding-left:24px}.small{font-size:12px;color:var(--muted)}.note{border-left:3px solid var(--green);background:#edf5ef;padding:14px 18px;margin:18px 0}.note p{margin:0}.table{overflow:auto;margin:14px 0}table{border-collapse:collapse;width:100%;font-size:13px;line-height:1.8}th,td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}th{background:#eef4ef;font-weight:650}td:first-child{font-weight:600}code{font:12px/1.75 Consolas,monospace;color:#14513e;background:#eff5ef;padding:2px 4px;overflow-wrap:anywhere}pre{background:#152c24;color:#e0efe5;border-radius:8px;padding:18px 20px;overflow:auto;font:12px/1.8 Consolas,monospace;tab-size:2}pre code{background:none;color:inherit;padding:0;overflow-wrap:normal}.wire{background:#f1f5f2;border:1px solid #b5cabe;border-radius:8px;padding:14px}.topbar,.toolbar{background:white;border:1px solid var(--line);padding:10px 14px;margin-bottom:10px;font-size:13px}.workspace{display:grid;grid-template-columns:minmax(0,1fr) 210px;gap:12px}.canvas{border:1px dashed #a5bdad;padding:14px;display:grid;grid-template-columns:1fr 1fr;align-content:start;gap:12px}.card{background:white;border:1px solid #c8d9cc;padding:12px;font-size:12px;min-height:105px}.card b{display:block;margin-bottom:7px}.inspector{background:white;border:1px solid var(--line);padding:14px;font-size:12px}.inspector hr{border:0;border-top:1px solid var(--line);margin:12px 0}.pill{color:#286248;background:#edf6ee;padding:2px 6px;white-space:nowrap}.method{border-top:1px solid var(--line);padding-top:7px;margin-top:22px}.method h3{font-family:Consolas,"Microsoft YaHei",monospace;color:var(--green)}.method dl{font-size:14px;margin:8px 0}.method dt{font-weight:700;margin-top:10px}.method dd{margin-left:0}.foot{font-size:12px;color:var(--muted)}
+@media(max-width:1000px){.shell{grid-template-columns:190px minmax(0,1fr);gap:20px;padding:24px 20px}section{padding:25px}header{padding:30px}.workspace{grid-template-columns:1fr}.inspector{min-height:140px}}
+@media(max-width:740px){.shell{display:block;padding:16px 12px}aside{position:static;max-height:none;margin-bottom:20px}nav{display:flex;gap:5px;flex-wrap:wrap}nav a{border:1px solid var(--line);padding:3px 7px;border-radius:4px;font-size:12px}.subtitle{margin-bottom:10px}header{padding:25px}header h1{font-size:29px}section{padding:23px 17px}h2{font-size:22px}.canvas{grid-template-columns:1fr}th,td{min-width:90px;padding:9px}}
+@media print{@page{size:A4;margin:17mm}body{background:white;font-size:10pt;line-height:1.65}.shell{display:block;padding:0}aside{display:none}header{background:white;color:#173f2b;border:2px solid #175c48;border-radius:0;padding:20px}header p,.kicker{color:#375b47}header h1{font-size:24pt}section{border:0;border-top:1px solid #bbcebf;border-radius:0;padding:18px 0;margin:18px 0}h2{font-size:17pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}table{font-size:8.5pt}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f1f5f2;color:#173b29;font-size:8.5pt}.table{overflow:visible}tr,.note{break-inside:avoid}thead{display:table-header-group}.workspace{grid-template-columns:1fr 180px}.small,.foot{font-size:8pt}}
+</style>
+</head>
+<body><div class="shell">
+<aside><div class="brand">AgentBoard.</div><div class="subtitle">详细功能规格 · v0.2 设计稿</div><nav aria-label="文档目录">
+<a href="#overview">01 范围与阅读约定</a><a href="#board-model">02 看板与公共类型</a><a href="#card-model">03 卡片公共结构</a><a href="#card-types">04 六类卡片的定义</a><a href="#assets">05 资源模型与读取</a><a href="#consistency">06 修改与版本语义</a><a href="#mcp">07 MCP 契约与工具目录</a><a href="#read-tools">08 发现与读取方法</a><a href="#write-tools">09 卡片写入方法</a><a href="#asset-tools">10 资源与操作状态方法</a><a href="#errors">11 错误与响应示例</a><a href="#frontend">12 前端页面结构</a><a href="#interactions">13 页面交互与保存</a><a href="#workflow">14 完整调用示例</a><a href="#acceptance">15 验收与边界</a><a href="#references">16 依据与后续设计</a>
+</nav><p class="small"><a href="functional-specification.html">返回整体功能规格</a><br>2026 年 11 月 11 日</p></aside>
+<main>
+<header><div class="kicker">AGENTBOARD / DETAILED SPECIFICATION</div><h1>卡片怎样定义，<br>双方怎样读取、修改与使用。</h1><p>将整体设计细化为可供前后端与 Agent 对接讨论的功能契约：数据字段、类型约束、MCP 工具参数、共享状态规则，以及前端页面与操作流程。</p><span class="badge">v0.2 · 设计稿</span><span class="badge">六类首版卡片</span><span class="badge">16 个 MCP 工具</span><span class="badge">中文说明 · JSON 示例</span></header>
+
+<section id="overview"><h2>01 / 范围与阅读约定</h2>
+<p>本文补充<a href="functional-specification.html">整体功能规格 v0.1</a>，沿用单用户与授权 Agent、单块首版看板、六类基础卡片、锁定与可恢复删除的范围。本文中的字段、限额和工具名称是本项目的拟定契约，尚不表示已有实现或用户已逐项确认。</p>
+<p>本文规定对外可见的数据和行为，供后续实现与验收使用；技术栈、存储方式、内部模块、通信传输选择与部署不在本次设计范围内。发生歧义时，本文中更具体的字段和行为约定用于细化整体规格。</p>
+<div class="note"><p><strong>三个不同层次：</strong>卡片定义描述控件规则；卡片状态保存用户与 Agent 共享的当前内容；页面草稿保存尚未提交的输入。草稿不会被 Agent 当作已确认数据读取。</p></div>
+<ul><li>示例中的标识仅用于说明；标识视为不透明字符串，不根据前缀推断权限。</li><li>下文 <code>?</code> 表示输入可省略；除明确说明外，不接受 <code>null</code>；输出中可空字段固定输出为 <code>null</code>。</li><li>所有 JSON 对象默认拒绝未声明字段；字符串长度按 Unicode 码点计算；时间为带时区的 RFC 3339 字符串，输出统一使用 UTC。</li><li>表中的「只读」表示调用者不能写入。请求中包含只读字段应报错，不能静默忽略。</li></ul>
+</section>
+
+<section id="board-model"><h2>02 / 看板与公共类型</h2>
+<div class="table"><table><thead><tr><th>对象 / 字段</th><th>类型与含义</th><th>约束</th></tr></thead><tbody>
+<tr><td>Board.id</td><td>string，稳定看板标识。</td><td>必有、只读；首版工具也必须明确传入目标看板。</td></tr>
+<tr><td>name / description</td><td>看板名称 / 用途说明。</td><td>名称 1～80 字；说明最多 2,000 字；首版由用户设置。</td></tr>
+<tr><td>revision</td><td>非负安全整数，看板已提交卡片变更的全局顺序。</td><td>初始为 0；每次有效卡片提交增加 1。资源读取、独立导入和修改看板名称不改变此值。</td></tr>
+<tr><td>schema_version</td><td>string，本项目数据契约版本。</td><td>首版为 <code>1.0</code>；与 MCP 协议版本无关。</td></tr>
+<tr><td>layout_policy</td><td>布局规则。</td><td>首版固定为 <code>{columns:12, collision:"reject"}</code>；含自动放置能力。</td></tr>
+<tr><td>capabilities / limits</td><td>支持类型、允许操作、文件及文本限额等。</td><td>运行时可发现；下文给出的限额是首版建议默认值。</td></tr>
+<tr><td>Actor</td><td><code>{id:string, kind:"user"|"agent", display_name:string}</code></td><td>由访问身份确定，调用者不得自行声明或冒充。</td></tr>
+<tr><td>Permissions</td><td><code>{read:boolean, create:boolean, edit:boolean, delete:boolean, restore:boolean, manage_lock:boolean, import_asset:boolean}</code></td><td>服务返回调用者的有效权限；Agent 的 <code>manage_lock</code> 固定为 false。</td></tr>
+<tr><td>Layout</td><td><code>{x:integer,y:integer,w:integer,h:integer}</code></td><td>基于 12 列网格；x≥0、y≥0、w≥2、h≥2、x+w≤12；w≤12、h≤24。高度单位为逻辑网格行，非像素。</td></tr>
+</tbody></table></div>
+<p>看板 revision 只标识卡片集合及其版本，不能代表外部引用文件内容或看板管理设置。滑条、勾选框、输入框最小尺寸为 2×2；文本、图片、文件为 3×2；默认尺寸依次为文本 4×4、图片 4×4、文件 4×2、滑条 4×2、勾选框 3×2、输入框 4×2。</p>
+</section>
+
+<section id="card-model"><h2>03 / 卡片公共结构</h2>
+<p>使用统一外壳与按类型区分的 <code>props</code>、<code>state</code>。首版固定类型、固定类型契约版本，不支持直接把文本卡片改成滑条。</p>
+<div class="table"><table><thead><tr><th>字段</th><th>类型 / 可写性</th><th>具体规则</th></tr></thead><tbody>
+<tr><td>id / board_id</td><td>string / 只读</td><td>稳定身份与所属看板，不能跨板改写。</td></tr>
+<tr><td>type</td><td>六类枚举 / 创建时写入</td><td><code>text | image | file | slider | checkbox | input</code>。</td></tr>
+<tr><td>type_version</td><td>string / 创建时写入</td><td>首版统一 <code>1.0</code>，与类型一起校验。</td></tr>
+<tr><td>title</td><td>string / 可写</td><td>必填，去除首尾空白后 1～120 字；不可把标题作为唯一身份。</td></tr>
+<tr><td>description</td><td>string / 可写</td><td>用途或参数含义，最多 2,000 字，默认空字符串。</td></tr>
+<tr><td>props</td><td>类型专属对象 / 可写</td><td>显示及输入定义；必须与 type、type_version 匹配。</td></tr>
+<tr><td>state</td><td>类型专属对象 / 可写</td><td>当前正文、值或资源关联；不嵌入文件字节。</td></tr>
+<tr><td>layout</td><td>Layout / 可写</td><td>创建时可省略，由看板安排；输出必有实际位置与尺寸。</td></tr>
+<tr><td>locked</td><td>boolean / 仅用户可管理</td><td>默认 false。锁定保护卡片整体，Agent 不得通过 edit_card 写入。</td></tr>
+<tr><td>lifecycle</td><td><code>active | deleted</code> / 只读</td><td>仅由删除与恢复操作改变。</td></tr>
+<tr><td>version</td><td>正安全整数 / 只读</td><td>创建为 1；有效编辑、锁定、解锁、删除和恢复均增加 1。</td></tr>
+<tr><td>last_revision</td><td>正安全整数 / 只读</td><td>该卡片最近一次有效变更的看板 revision。</td></tr>
+<tr><td>created_at / updated_at</td><td>时间字符串 / 只读</td><td>创建时间不变；有效变更更新 updated_at。</td></tr>
+<tr><td>created_by / updated_by</td><td>Actor / 只读</td><td>由已验证的实际操作者生成。</td></tr>
+<tr><td>deleted_at / deleted_by</td><td>时间与 Actor，或 null / 只读</td><td>active 时均为 null；删除时写入；恢复后清空，历史删除事件仍可在变化中辨认。</td></tr>
+</tbody></table></div>
+<h3>完整卡片示例</h3>
+<pre data-json><code>{
+  "id": "card_kp", "board_id": "board_control",
+  "type": "slider", "type_version": "1.0",
+  "title": "比例增益 Kp", "description": "PID 控制器的比例增益",
+  "props": {"min": 0, "max": 10, "step": 0.1, "unit": "", "precision": 1},
+  "state": {"value": 2.5},
+  "layout": {"x": 0, "y": 0, "w": 4, "h": 2},
+  "locked": false, "lifecycle": "active", "version": 1, "last_revision": 1,
+  "created_at": "2026-11-11T18:00:00Z", "updated_at": "2026-11-11T18:00:00Z",
+  "created_by": {"id": "agent_1", "kind": "agent", "display_name": "工作 Agent"},
+  "updated_by": {"id": "agent_1", "kind": "agent", "display_name": "工作 Agent"},
+  "deleted_at": null, "deleted_by": null
+}</code></pre>
+<p><strong>列表摘要 CardSummary：</strong>包含 id、board_id、type、type_version、title、layout、locked、lifecycle、version、last_revision、updated_at、updated_by，并附 <code>summary</code>（最多 160 字）及 <code>preview</code>。摘要为服务生成的确定性摘录，不引入自动语义总结。preview 是以下按 type 区分的对象：</p>
+<ul><li>text：<code>{text:string,truncated:boolean}</code>，text 为正文前 160 字，truncated 表示还有正文。</li><li>slider：<code>{value:number,unit:string}</code>；checkbox：<code>{checked:boolean,label:string}</code>；input：<code>{mode:"text"|"number",value:string|number|null,unit:string}</code>，值不得截短，文本模式 unit 为空。</li><li>image／file：<code>{asset_id:string,name:string|null}</code>；name 无法取得时为 null。摘要读取不核对外部文件内容，资源实际状态以 get_asset_info 为准。</li></ul>
+</section>
+
+<section id="card-types"><h2>04 / 六类卡片的定义</h2>
+<p>下表列出 <code>props</code> 和 <code>state</code> 的全部首版字段。「默认」仅在创建或字段重置时应用；编辑未提供的字段保持原值。所有数值必须有限，禁止 NaN、Infinity 与数字字符串。</p>
+<div class="table"><table><thead><tr><th>类型</th><th>props 定义</th><th>state 定义</th><th>校验与行为</th></tr></thead><tbody>
+<tr><td>text</td><td><code>format:"plain"|"markdown"</code>，默认 markdown。</td><td><code>text:string</code>，必填，可为空，最多 100,000 字。</td><td>完整保留正文；只渲染基础 Markdown。内嵌 HTML 不执行，代码块按文本显示。</td></tr>
+<tr><td>image</td><td><code>fit:"contain"|"cover"</code>，默认 contain；<code>alt:string</code> 默认空，最多 500 字。</td><td><code>asset_id:string</code> 必填；<code>caption:string</code> 默认空，最多 2,000 字。</td><td>创建和替换时必须引用可访问且可识别的图片；首版支持 PNG、JPEG、WebP、GIF。失效只影响预览，不清空说明。</td></tr>
+<tr><td>file</td><td><code>preview:"auto"|"none"</code>，默认 auto。</td><td><code>asset_id:string</code> 必填；<code>note:string</code> 默认空，最多 2,000 字。</td><td>任意允许存储的文件类型；auto 不承诺都能预览；不执行文件。</td></tr>
+<tr><td>slider</td><td><code>min:number,max:number,step:number</code> 必填；<code>unit:string</code> 默认空，最多 24 字；<code>precision:integer</code> 默认 2，范围 0～6。</td><td><code>value:number</code> 必填。</td><td>min&lt;max、step&gt;0；min、max、step、value 最多六位小数；value 位于闭区间，且等于 min+n×step，n 为非负整数。max 不是步长落点时，最高可选值为不超过 max 的最大落点；不得强行选中 max。</td></tr>
+<tr><td>checkbox</td><td><code>label:string</code> 必填，1～200 字。</td><td><code>checked:boolean</code> 必填。</td><td>不接受 null，不含「半选」状态；标题用于识别卡片，label 用于表达勾选含义。</td></tr>
+<tr><td>input</td><td><code>mode:"text"|"number"</code> 必填；<code>placeholder:string</code> 默认空，最多 200 字；<code>required:boolean</code> 默认 false；其他字段见下文。</td><td><code>value:string|number|null</code> 必填，具体类型由 mode 决定。</td><td>创建后不能改变 mode；改用另一种输入时创建新卡片。可选输入的「未填写」统一保存 null。</td></tr>
+</tbody></table></div>
+<h3>输入框专属规则</h3>
+<ul><li><strong>文本模式：</strong>仅再允许 <code>max_length:integer</code>，默认 500、范围 1～2,000。非空内容完整保留首尾空白；空字符串归一为 null。required=true 时，null、空串与仅空白内容无效。文本 "0" 是有效字符串。</li><li><strong>数值模式：</strong>仅再允许 <code>min:number|null</code>、<code>max:number|null</code>，默认 null；<code>unit:string</code> 默认空，最多 24 字；<code>precision:integer</code> 默认 2，范围 0～6。min≤max；值最多六位小数，满足已设置边界；required=true 时不允许 null。0 是有效数值。</li><li><strong>precision：</strong>仅决定显示的最大小数位，不改变保存值。不足以准确显示当前值时，控件旁仍显示精确值；不得静默舍入实际状态。</li><li>required 由 false 改为 true，或调整边界后当前值不再有效时，必须在同一修改内给出有效的新值，否则整个修改失败。</li></ul>
+<h3>最小创建内容示例</h3>
+<pre data-json><code>[
+  {"type":"text","type_version":"1.0","title":"设计目标","props":{"format":"markdown"},"state":{"text":"最大超调量不超过 20%。"}},
+  {"type":"image","type_version":"1.0","title":"阶跃响应","props":{"alt":"输出随时间变化的曲线"},"state":{"asset_id":"asset_plot","caption":"候选参数的仿真结果"}},
+  {"type":"file","type_version":"1.0","title":"被控对象模型","props":{},"state":{"asset_id":"asset_model"}},
+  {"type":"slider","type_version":"1.0","title":"Kp","props":{"min":0,"max":10,"step":0.1,"precision":1},"state":{"value":2.5}},
+  {"type":"checkbox","type_version":"1.0","title":"验证状态","props":{"label":"已通过实验验证"},"state":{"checked":false}},
+  {"type":"input","type_version":"1.0","title":"最大超调量","props":{"mode":"number","required":true,"min":0,"max":100,"unit":"%"},"state":{"value":20}}
+]</code></pre>
+<p>本数组只是六个独立创建请求中的 card 部分，不表示首版支持批量创建。图片与文件示例假设资源已经导入。</p>
+</section>
+
+<section id="assets"><h2>05 / 资源模型与读取</h2>
+<div class="table"><table><thead><tr><th>字段</th><th>含义与约束</th></tr></thead><tbody>
+<tr><td>id / board_id / mode</td><td>稳定资源标识、所属看板、<code>imported | reference</code>。首版不允许跨看板直接引用资源。</td></tr>
+<tr><td>name / mime_type / size_bytes</td><td>名称 1～255 字；内容类型由服务检测；大小为非负整数，无法读取的引用可为 null。</td></tr>
+<tr><td>source</td><td>导入为 <code>{kind:"upload"|"inline"|"approved_file"}</code>；引用为 <code>{root_id,relative_path}</code>。不返回未授权系统绝对路径。</td></tr>
+<tr><td>status</td><td><code>available | missing | forbidden | unreadable | too_large</code>。读取或刷新时重新检查；这是查询结果，不是永远有效的保证。</td></tr>
+<tr><td>resource_version / checked_at</td><td>当前可读取内容的不透明版本标记与核对时间；不可取得内容时 version 可为 null。导入副本不可原地覆盖，替换须创建新资源。</td></tr>
+<tr><td>created_at / created_by</td><td>导入／建立引用的时间及身份，只读。</td></tr>
+<tr><td>preview_kind / readable_as</td><td>预览为 image、text 或 none；可读取格式为 text、bytes 的子集。首版只保证图片与 UTF-8 纯文本的直接预览，PDF、办公文档等可下载。</td></tr>
+</tbody></table></div>
+<p>每个资源默认最多 20 MiB；inline 传入的原始字节最多 1 MiB，Base64 膨胀不计入原始限额；大文件通过用户文件选择或已授权目录导入。首版不提供任意远程 URL 抓取。引用目录列表只列出已获准位置，其授权与撤销由用户管理。</p>
+<p>资源内容与卡片正文分开读取。图片返回实际可访问内容，无法内联到客户端时提供资源引用及字节读取方式。OCR、PDF 文本抽取、文件内容理解均不作为首版自动能力。</p>
+<div class="note"><p><strong>外部文件版本：</strong>引用文件可能在看板之外改变，因此读取每一片内容时须核对 resource_version。版本改变就中止本轮拼接，重新读取；不能把不同版本的分片拼成一份文件。锁定卡片也不会冻结被引用原文件，如需固定资料，应导入副本。</p></div>
+</section>
+
+<section id="consistency"><h2>06 / 修改与版本语义</h2>
+<h3>局部编辑方式</h3>
+<p><code>edit_card.changes</code> 只允许 title、description、props、state、layout。标量替换；props、state、layout 中<strong>显式出现的直接子字段</strong>逐项替换；缺失字段保持原值。首版没有更深层次合并、数组拼接、删除字段或 JSON Patch。null 仅可用于类型明确允许为空的字段，不代表删除。</p>
+<pre data-json><code>{
+  "board_id":"board_control", "card_id":"card_kp",
+  "expected_version":1, "command_id":"cmd_rename_001",
+  "changes":{"title":"待验证的比例增益 Kp","props":{"max":12}}
+}</code></pre>
+<p>此请求保留 min、step、value、其他元数据和布局；服务合并后整体校验，再一次提交。相同数值、相同正文或相同布局的无变化请求返回 <code>changed:false</code>，不增加 version 或 revision，也不更新最近修改者。</p>
+<h3>并发、幂等与权限判定</h3>
+<ol><li>修改、删除、恢复以及用户锁定／解锁，都必须带 <code>expected_version</code>。首版按整张卡片检查，相同卡片的布局调整也会使旧编辑失效。</li><li>所有写工具（含资源导入）必须带 <code>command_id</code>（1～128 个 ASCII 可见字符，建议随机唯一值）。同一访问身份、同一看板内，command_id 跨写工具唯一。</li><li>相同 command_id、相同工具与完整输入的重试，返回第一次已确定的结果，附 <code>replayed:true</code>；请求内容不同则报 IDEMPOTENCY_KEY_REUSED。重试不得再次触发写入。</li><li>结果回执在首版不自动清除；确定的业务失败也保存回执。修正内容或解决冲突后是新意图，应使用新 command_id。处理中返回 OPERATION_PENDING，使用状态工具继续确认。</li><li>未授权身份不建立回执。每次读取回执仍需校验当前权限；不能因过去有权限而绕过已撤销的访问。</li><li>对新命令先检查访问权、对象存在性与生命周期、锁定、expected_version，再校验修改后内容和布局。全部有效才提交。已删除卡片不可 edit；删除／恢复的幂等例外见具体方法。</li></ol>
+<h3>布局冲突</h3>
+<p>指定布局与活动卡片重叠时返回 LAYOUT_CONFLICT，不自动移动其他卡片。创建省略 layout 时，按从上到下、同一行从左到右寻找容纳默认尺寸的首个空位；恢复和用户「自动放置」使用相同规则。拖动、缩放只提交所操作卡片的新布局。</p>
+<h3>快照与变化衔接</h3>
+<p>首次快照返回固定 revision=R 的活动卡片集合和 snapshot_id；分页都读取这一状态，不能每页取不同时间点。收齐全部页面后才以 R 为起点读取变化。快照分页句柄有效 10 分钟，过期需从头取；列表分页亦固定读取时间点。</p>
+<p>变化按 revision 升序返回，每个有效卡片变更一条记录，含 <code>{revision,event_id,kind,card_id,card_version,actor,occurred_at,card_after}</code>。kind 为 created、updated、locked、unlocked、deleted、restored；card_after 为该次提交后的完整卡片，包括删除状态，资源仍仅为引用。消费者以 after 中的 version 更新本地状态，忽略已应用的旧版本。</p>
+<p>get_changes 首次确定截至 revision=T；分段读取到 T 后再请求下一轮。首版保证至少最近 30 天变化可用；since_revision 早于可用范围时返回 SNAPSHOT_REQUIRED 和最早可用标记。删除卡片及命令回执不因变化记录过期而被清除。</p>
+</section>
+
+<section id="mcp"><h2>07 / MCP 契约与工具目录</h2>
+<p>以下 16 个名称是 <strong>AgentBoard 自定义的 MCP Tools</strong>，通过协议的工具发现与调用能力提供；它们本身不是 MCP 标准 RPC 方法。服务公布各工具的 inputSchema、outputSchema 与用途说明，使用结构化结果供 Agent 读取，业务执行失败通过工具结果中的 isError 表达。协议层未知方法、无效调用结构等错误与业务错误区分。参见<a href="https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/server/tools.mdx">MCP 官方 Tools 文档</a>。</p>
+<p>本文示例仅展示工具业务参数与 structuredContent，不是完整协议报文；握手、协议版本协商和协议要求的元数据由接入设计补充。首版不依赖通知唤醒 Agent，也不新增 Agent 执行循环。</p>
+<div class="table"><table><thead><tr><th>分类</th><th>首版工具</th><th>用途</th></tr></thead><tbody>
+<tr><td>发现 / 3 个</td><td>list_boards、get_board_info、get_card_types</td><td>选择目标、了解权限和限制、查询类型契约。</td></tr>
+<tr><td>读取 / 4 个</td><td>get_card_list、read_card、get_board_snapshot、get_changes</td><td>浏览、精读、恢复上下文和增量同步。</td></tr>
+<tr><td>卡片写入 / 4 个</td><td>push_card、edit_card、delete_card、restore_card</td><td>卡片完整生命周期。</td></tr>
+<tr><td>资源 / 4 个</td><td>get_asset_sources、import_asset、get_asset_info、read_asset</td><td>发现授权来源、添加资源、读取元信息与内容。</td></tr>
+<tr><td>操作核对 / 1 个</td><td>get_operation_status</td><td>网络超时后核实结果、避免重复操作。</td></tr>
+</tbody></table></div>
+<h3>统一业务结果</h3>
+<pre data-json><code>{
+  "ok":true,
+  "data":{"card_id":"card_kp","version":2,"changed":true},
+  "meta":{"request_id":"req_123","board_revision":2,"command_id":"cmd_rename_001","replayed":false}
+}</code></pre>
+<p>成功为 <code>{ok:true,data,meta}</code>；失败为 <code>{ok:false,error,meta}</code>，互斥输出 data 与 error。meta 必有 request_id；与看板卡片状态有关时返回 board_revision；写工具回执带 command_id 和 replayed。board_revision 是本响应读取／提交的标记，不保证此刻仍是最新版本。</p>
+<p>可分页输入公共字段：<code>limit?</code> 默认 20、范围 1～100；<code>cursor?</code> 首次省略。结果为 items、next_cursor（结束为 null）和对应快照标记。继续分页时保留首次筛选、排序和 limit 不变；cursor 不合法或与条件不匹配时拒绝。分页顺序固定，不静默跳项。</p>
+</section>
+
+<section id="read-tools"><h2>08 / 发现与读取方法</h2>
+<div class="method"><h3>1. list_boards</h3><dl><dt>输入</dt><dd><code>{limit?,cursor?}</code></dd><dt>输出</dt><dd>items 为 <code>{id,name,description,revision,permissions}</code>；按 id 升序；附 next_cursor。首版正常只返回一块获授权看板，无权限对象不列出。</dd></dl></div>
+<div class="method"><h3>2. get_board_info</h3><dl><dt>输入</dt><dd><code>{board_id}</code></dd><dt>输出</dt><dd>Board、permissions、supported_types、limits、active_card_count、deleted_card_count；limits 含正文长度、资源大小、单页数量、快照有效期和变化保留期。无需另取卡片才知道限制。</dd></dl></div>
+<div class="method"><h3>3. get_card_types</h3><dl><dt>输入</dt><dd><code>{board_id,type?}</code>；省略 type 返回全部六类。</dd><dt>输出</dt><dd><code>{types:[{type,type_version,label,description,props_schema,state_schema,default_props,default_layout,min_layout}]}</code>。props_schema 与 state_schema 为可机器校验的 JSON Schema，明确 required、枚举、允许 null、长度和边界；跨字段规则附 <code>constraints</code> 中文说明，例如 min 与 max、步长落点。JSON Schema 文档用服务声明的 dialect，不另造含义相近的字段。</dd><dt>异常</dt><dd>未知类型返回 UNSUPPORTED_TYPE；不提供未注册类型的创建建议。</dd></dl></div>
+<div class="method"><h3>4. get_card_list</h3><dl><dt>输入</dt><dd><code>{board_id,lifecycle?:"active"|"deleted",type?,title_query?,limit?,cursor?}</code>；默认 active。title_query 为标题的连续子串匹配，不区分拉丁字母大小写，最多 120 字。</dd><dt>输出</dt><dd><code>{items:CardSummary[],next_cursor,as_of_revision,list_id}</code>。按 y、x、id 升序；过滤只影响列表，不改变读写权限。回收站使用 lifecycle=deleted。</dd></dl></div>
+<div class="method"><h3>5. read_card</h3><dl><dt>输入</dt><dd><code>{board_id,card_id,include_deleted?:boolean}</code>，默认 false。</dd><dt>输出</dt><dd>data 为 <code>{card:Card}</code>，正文完整，不返回摘要替代正文；资源仅返回 asset_id，可继续 get_asset_info / read_asset。</dd><dt>异常</dt><dd>已删除且未要求包含时返回 CARD_DELETED；资源失效不导致卡片自身读取失败。</dd></dl></div>
+<div class="method"><h3>6. get_board_snapshot</h3><dl><dt>输入</dt><dd><code>{board_id,view?:"summary"|"full",limit?,cursor?}</code>，默认 summary。</dd><dt>输出</dt><dd><code>{snapshot_id,revision,view,items,next_cursor,complete}</code>。默认只含活动卡片，items 为 CardSummary 或 Card；complete 仅在本页为末页时为 true。full 含正文和控件值，不含资源字节。</dd><dt>读取策略</dt><dd>summary 适合会话初始浏览，可按 id 精读；若需要同一时点的完整集合必须选 full，不能把随后 read_card 得到的新版本当作旧快照内容。</dd></dl></div>
+<div class="method"><h3>7. get_changes</h3><dl><dt>输入</dt><dd><code>{board_id,since_revision,limit?,cursor?}</code>；since_revision 为已完整消费的非负整数。</dd><dt>输出</dt><dd><code>{from_revision,to_revision,items:Change[],next_cursor,next_since_revision,complete}</code>。next_since_revision 为本页最后一条已返回 revision，无条目时等于 from_revision；complete=true 时等于 to_revision。使用 cursor 消费本批后再用 next_since_revision 开新批。</dd><dt>异常</dt><dd>未来 revision 返回 INVALID_ARGUMENT；过旧返回 SNAPSHOT_REQUIRED。每页按完整事件切分，单个正文较大不截断事件。</dd></dl></div>
+</section>
+
+<section id="write-tools"><h2>09 / 卡片写入方法</h2>
+<p>所有方法均按第 06 节处理 command_id。返回卡片内容是该操作提交时的结果，重放回执时可能已经过时；需要现值应重新 read_card。</p>
+<div class="method"><h3>8. push_card</h3><dl><dt>输入</dt><dd><code>{board_id,command_id,card:{type,type_version,title,description?,props,state,layout?}}</code>。props 可为 {}，但必填定义仍需提供；state 不省略。</dd><dt>输出</dt><dd><code>{card:Card,changed:true,placement:"requested"|"automatic"}</code>。系统补齐默认值、身份、标识、版本和位置。Agent 不能创建时附加 locked=true。</dd><dt>失败</dt><dd>未知类型、无效初始值、资源不存在／不可用、指定布局冲突；失败不留下半张卡片。</dd></dl></div>
+<div class="method"><h3>9. edit_card</h3><dl><dt>输入</dt><dd><code>{board_id,card_id,expected_version,command_id,changes}</code>；changes 至少有一个可编辑字段，遵守局部合并规则。</dd><dt>输出</dt><dd><code>{card:Card,changed:boolean}</code>。验证合并后的完整卡片；不支持更改 type、mode、身份、锁定或生命周期。</dd><dt>失败</dt><dd>CARD_LOCKED、VERSION_CONFLICT、VALIDATION_FAILED、LAYOUT_CONFLICT。两侧编辑都不能绕过锁定。</dd></dl></div>
+<div class="method"><h3>10. delete_card</h3><dl><dt>输入</dt><dd><code>{board_id,card_id,expected_version,command_id}</code></dd><dt>输出</dt><dd><code>{card:Card,changed:boolean}</code>。首次删除版本递增并记录删除者。已删除且 expected_version 匹配当前版本时返回 changed=false；版本不匹配仍冲突。</dd><dt>效果</dt><dd>卡片从正常视图移除，保留内容和资源引用。锁定卡片须先由用户解锁；不删除资源或磁盘原文件。</dd></dl></div>
+<div class="method"><h3>11. restore_card</h3><dl><dt>输入</dt><dd><code>{board_id,card_id,expected_version,command_id}</code></dd><dt>输出</dt><dd><code>{card:Card,changed:boolean,layout_adjusted:boolean}</code>。删除卡片恢复时沿用原 id；原位置可用则保留，否则自动安排。已 active 且版本匹配时返回 changed=false。</dd><dt>资源失效</dt><dd>允许恢复卡片与说明，不要求引用原文件重新可用；前端显示资源实际状态。</dd></dl></div>
+<div class="note"><p><strong>锁定方法归属：</strong>首版 MCP 不暴露锁定／解锁工具。用户前端管理操作采用相同 expected_version、command_id 语义。锁定与解锁各形成一次卡片变更。用户权限变更、授权目录管理同样仅放在前端管理入口。</p></div>
+</section>
+
+<section id="asset-tools"><h2>10 / 资源与操作状态方法</h2>
+<div class="method"><h3>12. get_asset_sources</h3><dl><dt>输入</dt><dd><code>{board_id}</code></dd><dt>输出</dt><dd><code>{roots:[{root_id,label,can_import,can_reference}],inline_max_bytes,asset_max_bytes}</code>；仅返回已获准来源和逻辑标签，不枚举全部文件。</dd></dl></div>
+<div class="method"><h3>13. import_asset</h3><dl><dt>输入</dt><dd><code>{board_id,command_id,name,mode,source}</code>。mode 为 imported 或 reference；source 是以下二选一。</dd></dl>
+<ul><li><code>{kind:"inline",mime_type,data_base64}</code>：仅允许 mode=imported；解码后最多 1 MiB，类型声明须与检测结果兼容。</li><li><code>{kind:"approved_file",root_id,relative_path}</code>：可导入副本或引用；relative_path 必须位于已批准根目录中，不允许绝对路径、越界或通过链接访问范围外目标。</li></ul>
+<dl><dt>输出</dt><dd><code>{asset:Asset}</code>，不自动创建卡片。mode=imported 固定保存当前副本；mode=reference 保留受控引用。请求重试返回同一 asset_id。</dd><dt>补充</dt><dd>用户文件选择／拖入采用同一资源模型，服务接受成功后再创建卡片；未被卡片引用的已导入资源首版不自动清理，可在资源选择面板重新使用。用户撤销目录授权后，依赖该目录的引用变为 forbidden。</dd></dl></div>
+<div class="method"><h3>14. get_asset_info</h3><dl><dt>输入</dt><dd><code>{board_id,asset_id}</code></dd><dt>输出</dt><dd><code>{asset:Asset}</code>，核对当前来源并返回 checked_at、resource_version 与 status；可辨认的已存在资源发生失效时，以 status 表达，不伪造为不存在。</dd></dl></div>
+<div class="method"><h3>15. read_asset</h3><dl><dt>输入</dt><dd><code>{board_id,asset_id,format:"text"|"bytes",resource_version?,cursor?}</code>。首次无 cursor；若要读取此前元信息所指内容，传 resource_version。</dd><dt>输出</dt><dd><code>{asset_id,resource_version,format,offset,content,next_cursor,complete}</code>。text 仅支持 UTF-8 纯文本，content 为最多 32,768 码点的完整字符片段，offset 单位为码点；bytes 的 content 为原始字节最多 256 KiB 的 Base64，offset 单位为字节。分片连续、不重叠；结束时 next_cursor=null。空文件也返回一次 complete=true 的空片段。</dd><dt>一致性</dt><dd>后续 cursor 绑定资源、身份、格式和 resource_version，有效 10 分钟；不可改变条件。引用内容变化返回 ASSET_CHANGED，提示重新开始；失效返回具体资源错误。</dd><dt>图片兼容</dt><dd>支持的客户端可额外获得 MCP 图片内容块或资源链接；结构化字节读取始终可用。资源 URI 的方案与协议承载另行确定，不能让链接成为绕过授权的入口。参见<a href="https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/server/resources.mdx">MCP 官方 Resources 文档</a>。</dd></dl></div>
+<div class="method"><h3>16. get_operation_status</h3><dl><dt>输入</dt><dd><code>{board_id,command_id}</code>；只查询当前身份发起的命令。</dd><dt>输出</dt><dd><code>{status:"unknown"|"pending"|"succeeded"|"failed",result}</code>。前两种 result=null；后两种为原业务结果封装。unknown 只表示未查到已登记操作，不能断言某个在途请求不会随后到达。</dd><dt>后续行动</dt><dd>pending 时稍后查询；unknown 时可用同一 command_id 和相同输入重试；succeeded／failed 依据原结果处理。不要换新命令来猜测重试。</dd></dl></div>
+</section>
+
+<section id="errors"><h2>11 / 错误与响应示例</h2>
+<p>error 结构为 <code>{code,message,field_errors,retryable,recovery,details}</code>。field_errors 为 <code>[{path,code,message}]</code>，无字段错误时为空数组；details 只返回当前权限允许的信息；message 与 recovery 为中文。</p>
+<div class="table"><table><thead><tr><th>错误码</th><th>发生条件</th><th>处理动作 / retryable</th></tr></thead><tbody>
+<tr><td>INVALID_ARGUMENT / VALIDATION_FAILED</td><td>输入结构错误、越界、无效定义或合并后不合法。</td><td>改正参数后用新 command_id / false。</td></tr>
+<tr><td>UNAUTHORIZED / FORBIDDEN</td><td>身份无效或没有操作权限。</td><td>恢复身份或由用户调整权限 / false。</td></tr>
+<tr><td>NOT_FOUND</td><td>目标不存在或不可向调用者披露其存在。</td><td>核对目标；不回传私有内容 / false。</td></tr>
+<tr><td>CARD_DELETED / CARD_LOCKED</td><td>编辑已删除卡片或修改锁定卡片。</td><td>恢复卡片或请求用户解锁，再重新读取 / false。</td></tr>
+<tr><td>VERSION_CONFLICT</td><td>expected_version 与当前版本不同。</td><td>返回可访问的 current_version，重新读取后重建修改 / false。</td></tr>
+<tr><td>LAYOUT_CONFLICT</td><td>指定网格与活动卡片重叠。</td><td>调整位置或使用自动放置 / false。</td></tr>
+<tr><td>UNSUPPORTED_TYPE</td><td>未支持的 type、type_version 或读取格式。</td><td>查询支持能力 / false。</td></tr>
+<tr><td>ASSET_UNAVAILABLE / ASSET_CHANGED</td><td>缺失、无权访问、不可读或读取中内容改变。</td><td>details.reason 对应资源状态；修复来源或重开读取 / false。</td></tr>
+<tr><td>LIMIT_EXCEEDED</td><td>正文、文件或请求超过公布限制。</td><td>减少内容或选择支持的导入方式 / false。</td></tr>
+<tr><td>CURSOR_INVALID / CURSOR_EXPIRED</td><td>条件不匹配、标记无效或已过期。</td><td>重新从首段读取，快照需重新开始 / false。</td></tr>
+<tr><td>SNAPSHOT_REQUIRED</td><td>增量起点已不在保留范围内。</td><td>获取完整快照 / false。</td></tr>
+<tr><td>IDEMPOTENCY_KEY_REUSED</td><td>同一命令标识被用于不同请求。</td><td>核对意图，新操作使用新标识 / false。</td></tr>
+<tr><td>OPERATION_PENDING / SERVICE_UNAVAILABLE</td><td>原命令处理中或暂时不可用。</td><td>查状态或使用同一命令重试 / true。</td></tr>
+</tbody></table></div>
+<p>retryable=true 仅表示允许在条件未改变时重试，不能保证下一次成功；返回业务结果未知的网络中断不等于一次失败回执。协议级拒绝的参数结构错误可能没有业务回执。</p>
+<h3>冲突结果示例（structuredContent）</h3>
+<pre data-json><code>{
+  "ok":false,
+  "error":{
+    "code":"VERSION_CONFLICT",
+    "message":"卡片已被其他操作者更新，本次修改未保存。",
+    "field_errors":[], "retryable":false,
+    "recovery":"重新读取卡片，确认最新内容后使用新命令提交。",
+    "details":{"card_id":"card_kp","expected_version":1,"current_version":2}
+  },
+  "meta":{"request_id":"req_124","board_revision":2,"command_id":"cmd_old_001","replayed":false}
+}</code></pre>
+<p>此类工具执行失败的 MCP 结果标记 isError=true；结构化内容与给人阅读的说明表达同一结果，不应出现一处成功、一处失败。</p>
+</section>
+
+<section id="frontend"><h2>12 / 前端页面结构</h2>
+<p>首版采用一个主看板页面，加侧边编辑面板与对话框。页面入口可定位到指定看板和卡片，找不到目标时保留当前工作并给出提示。</p>
+<div class="wire" role="img" aria-label="主页面线框：顶部为看板和保存状态，其下为工具栏，中部为卡片画布与属性面板，底部为最近变更入口">
+<div class="topbar"><strong>AgentBoard / 控制器设计</strong>　看板标识：board_control　<span class="pill">已连接 · 已保存</span>　设置</div>
+<div class="toolbar">＋ 添加卡片　｜　导入图片／文件　｜　搜索标题或卡片标识　｜　回收站</div>
+<div class="workspace"><div class="canvas"><div class="card"><b>⋮⋮ 设计目标　···</b>最大超调量不超过 20%。<br><span class="small">文本 · 用户更新 · 已保存</span></div><div class="card"><b>⋮⋮ 比例增益 Kp　···</b>0 ━━━●━━━━ 10<br>当前值：2.5<br><span class="small">slider · card_kp</span></div><div class="card"><b>⋮⋮ 最大超调量　···</b>[ 20 ] %<br><span class="small">数值输入 · 已保存</span></div><div class="card"><b>⋮⋮ 验证状态　···</b>□ 已通过实验验证<br><span class="small">勾选框 · 最近由 Agent 更新</span></div></div><div class="inspector"><strong>选中卡片：比例增益 Kp</strong><hr>内容｜控件定义｜布局<br>标题：[比例增益 Kp]<br>最小值：[0]<br>最大值：[10]<br>步长：[0.1]<br>单位：[　]<hr>版本 1 · 最近修改者<br>复制标识　定位卡片<hr>[取消]　[保存修改]</div></div>
+<div class="toolbar" style="margin-top:10px;margin-bottom:0">最近变更　Agent 添加了「比例增益 Kp」 · 查看详情　｜　2 张卡片在回收站</div>
+</div>
+<p class="small">本图是静态功能线框，方括号表示控件位置，不是可点击原型。实际按钮名称可调整，操作语义以本规格为准。</p>
+<div class="table"><table><thead><tr><th>区域</th><th>展示内容</th><th>操作行为</th></tr></thead><tbody>
+<tr><td>顶部工作区栏</td><td>名称、标识、连接状态、总体保存状态。</td><td>复制看板标识；打开设置。总体状态有「未保存、保存中、已保存、保存失败、存在冲突、离线」。优先展示需要用户处理的状态。</td></tr>
+<tr><td>工具栏</td><td>添加、资源导入、搜索、回收站。</td><td>添加弹出六类卡片选择；搜索支持标题和完整标识。只在活动卡片内筛选，回收站单独搜索；首版不提供正文全文搜索。</td></tr>
+<tr><td>卡片画布</td><td>12 列网格、标题、内容、拖动把手、菜单、最近保存状态。</td><td>点击卡片选中，打开属性；仅拖动把手或缩放边角调整布局；点击控件只改变其值，不移动卡片。</td></tr>
+<tr><td>属性面板</td><td>标题、描述、类型定义、完整内容、布局、标识与修改信息。</td><td>内容／定义／布局分组；只编辑可写字段；显示校验错误；保存和取消。只读信息不放成可编辑输入。</td></tr>
+<tr><td>资源选择对话框</td><td>已添加资源、导入副本、受控引用；名称、模式、可用状态。</td><td>用户选择本地文件上传；引用时选择授权目录与相对位置；完成后在原卡片编辑中填入 asset_id。</td></tr>
+<tr><td>图片／文件查看层</td><td>大图、说明、资源来源和最近核对时间。</td><td>图片缩放；文本预览；获取原文件；引用资源提供「刷新资源」。替换资源进入编辑流程。</td></tr>
+<tr><td>回收站</td><td>已删除列表、标题、类型、删除时间和删除者。</td><td>读取完整内容、恢复；没有永久删除按钮。恢复后定位卡片并说明位置是否变化。</td></tr>
+<tr><td>最近变更面板</td><td>最近 50 条变更，包含操作者、动作、卡片标题与时间。</td><td>定位仍存在的卡片；已删除项跳转回收站。无逐字段历史差异与回滚入口。</td></tr>
+<tr><td>设置</td><td>看板名称、说明、Agent 访问范围、已授权资源目录。</td><td>用户管理授权；撤销目录时说明哪些引用受影响。首版无创建多看板入口。</td></tr>
+</tbody></table></div>
+<h3>卡片菜单与锁定</h3>
+<p>活动卡片菜单包含编辑、复制标识、定位、锁定／解锁、删除。锁定后禁用内容编辑、控件、拖动、缩放与删除，并显示锁图标和中文状态；读取与复制标识可用。用户显式解锁后才恢复编辑。不设置仅凭创建者身份决定的隐藏权限。</p>
+<h3>小窗口与键盘</h3>
+<p>窄屏时卡片按 y、x、id 顺序单列展示；桌面网格布局不被改写，窄屏关闭直接拖拽和缩放，仍可通过属性中的坐标与尺寸编辑布局。属性面板改为全屏编辑层。键盘可选中卡片、输入、操作控件，并通过布局表单替代拖动；焦点与错误说明可辨认。</p>
+</section>
+
+<section id="interactions"><h2>13 / 页面交互与保存</h2>
+<div class="table"><table><thead><tr><th>操作</th><th>草稿与提交时机</th><th>成功／失败反馈</th></tr></thead><tbody>
+<tr><td>添加卡片</td><td>对话框中填写，点「创建」才提交；默认位置自动安排。</td><td>成功后选中并定位新卡片；失败保留输入；创建请求未确认前不重复发送新命令。</td></tr>
+<tr><td>编辑标题、正文、定义</td><td>面板内暂存草稿，点「保存修改」一次提交本次实际改动。取消放弃草稿。</td><td>成功显示实际版本；失败在字段旁说明。离开有草稿的面板时提供继续编辑／放弃／保存选项。</td></tr>
+<tr><td>滑条</td><td>拖动过程只预览；松开一次提交。键盘调整在 300 毫秒无新按键或失焦时提交一次；精确数值输入以 Enter 或失焦提交。</td><td>显示保存中；失败保留待重试值，旁边展示最后已保存值。待确认期间同控件禁用重复提交，不影响其他卡片。</td></tr>
+<tr><td>勾选框</td><td>切换一次提交，pending 时禁用该控件。</td><td>失败显示原已保存状态与此次待保存意图，可重新读取后重试。</td></tr>
+<tr><td>卡片内输入框</td><td>输入为草稿；Enter 或失焦时提交；Escape 恢复最后已保存值。</td><td>本地无效输入不提交；服务拒绝时保留原输入并标注错误，Agent 仍读到旧已保存值。</td></tr>
+<tr><td>拖动／缩放</td><td>松开后提交新布局；过程中显示网格吸附与冲突提示。</td><td>成功使用实际位置；失败恢复已保存位置并提示，不自动推开其他卡片。</td></tr>
+<tr><td>删除</td><td>确认目标后提交，说明可在回收站恢复。</td><td>成功移除；可显示恢复入口；失败保留卡片。</td></tr>
+<tr><td>导入与替换资源</td><td>先成功添加资源，再创建或编辑卡片。替换前保持旧资源关联。</td><td>第二步失败不会清空旧卡片；已添加资源可稍后重用。</td></tr>
+</tbody></table></div>
+<h3>同一卡片的编辑互斥</h3>
+<p>本页面对同一卡片只保留一个活动草稿编辑入口：属性面板有未保存改动时，卡片内联控件、拖动和缩放暂时禁用；切换到另一编辑入口前先处理草稿。同一卡片已有请求进行中时，不并行发起第二个写请求。其他客户端或 Agent 的并发仍按版本冲突处理。</p>
+<h3>外部更新与冲突处理</h3>
+<ol><li>卡片没有本地草稿时，应用新版本并短暂提示修改来源，不强制滚动到该卡片。</li><li>有本地草稿时，保留草稿，不自动混入新正文；显示「已有新版本」。</li><li>冲突层展示最新已保存内容和本地待保存改动；可选「采用最新版本」或「保留草稿，基于最新版本重新编辑」。后者须重新审阅本地改动，使用最新 version 与新 command_id 提交，不提供静默强制覆盖。</li><li>若新状态为删除或锁定，保留可复制的本地草稿；暂停提交，分别引导恢复或解锁。</li></ol>
+<h3>断线、未确认结果与空状态</h3>
+<p>离线时可以继续在当前页面保留已打开的草稿，但禁用写入和资源刷新。连接恢复后先核对未确认命令，再读取变化或新快照，之后处理草稿冲突；不自动把离线草稿当作新值覆盖。页面关闭不保证恢复未保存草稿，离开前提示。</p>
+<p>空看板展示「添加第一张卡片」和「让 Agent 向当前看板推送卡片」说明；搜索无结果提供清除筛选；无可用目录提供由用户配置来源的入口；资源预览失败保留卡片标题、说明与重试／替换操作。</p>
+</section>
+
+<section id="workflow"><h2>14 / 完整调用示例</h2>
+<p>以下按顺序发生，假设看板初始 revision=0，自动分配标识 card_kp。省略完整输出中的审计字段，但请求片段均是业务参数，不是 JSON-RPC 报文。</p>
+<h3>① 确认工作区与类型</h3>
+<pre data-json><code>{"tool":"get_board_info","arguments":{"board_id":"board_control"}}</code></pre>
+<pre data-json><code>{"tool":"get_card_types","arguments":{"board_id":"board_control","type":"slider"}}</code></pre>
+<h3>② 创建 Kp 卡片</h3>
+<pre data-json><code>{
+  "tool":"push_card",
+  "arguments":{
+    "board_id":"board_control","command_id":"cmd_create_kp",
+    "card":{"type":"slider","type_version":"1.0","title":"比例增益 Kp",
+      "props":{"min":0,"max":10,"step":0.1,"precision":1},"state":{"value":2.5}}
+  }
+}</code></pre>
+<p>成功：id=card_kp、version=1、last_revision=1。用户在网页将 Kp 保存为 3.0 后，version=2、revision=2。</p>
+<h3>③ Agent 读取变化，获取精确新值</h3>
+<pre data-json><code>{"tool":"get_changes","arguments":{"board_id":"board_control","since_revision":1}}</code></pre>
+<p>变化中的 card_after.state.value=3.0；操作者为 user。若 Agent 持有的快照过旧，就先取新快照，不依赖聊天中曾经出现的 2.5。</p>
+<h3>④ 基于最新版本只修改说明</h3>
+<pre data-json><code>{
+  "tool":"edit_card",
+  "arguments":{"board_id":"board_control","card_id":"card_kp",
+    "expected_version":2,"command_id":"cmd_explain_kp",
+    "changes":{"description":"当前候选值，尚待实验验证。"}}
+}</code></pre>
+<p>成功后 version=3、revision=3，state.value 仍为 3.0。若此时发生超时，使用 get_operation_status 查询 cmd_explain_kp；不要改用新命令重复发起。</p>
+<h3>⑤ 分开处理业务结果与验证事实</h3>
+<p>Agent 可以添加分析文字和仿真图片；若没有实验依据，不应把「已通过实验验证」勾选为 true。框架负责保留操作者与状态，不替 Agent 判断结论是否正确。</p>
+</section>
+
+<section id="acceptance"><h2>15 / 验收与边界</h2>
+<p>整体规格 AT-01～15 继续适用，增加以下可验证断言。</p>
+<div class="table"><table><thead><tr><th>编号</th><th>验证点</th><th>预期结果</th></tr></thead><tbody>
+<tr><td>DT-01</td><td>六类创建输入、返回默认值和 read_card 结果。</td><td>均符合类型定义；只读字段不可写；类型与 input.mode 不可改。</td></tr>
+<tr><td>DT-02</td><td>滑条浮点步长、边界不落点、输入 null／0／空串。</td><td>按公开规则校验，精确值不因显示精度改变。</td></tr>
+<tr><td>DT-03</td><td>只改 props.max，同时检查 min、step、state。</td><td>未指定字段保留；导致当前值失效则整个修改失败。</td></tr>
+<tr><td>DT-04</td><td>重复命令、换参数复用命令、结果未知后查询。</td><td>重放原结果、不重复写入；不同参数拒绝；状态不把 unknown 误作确定失败。</td></tr>
+<tr><td>DT-05</td><td>无变化修改、重复删除／恢复、锁定与解锁。</td><td>无变化不升版本；有效生命周期和锁定变更同时升卡片 version 与看板 revision。</td></tr>
+<tr><td>DT-06</td><td>快照分页期间用户继续更新卡片。</td><td>快照各页属于同一个 revision；消费后接增量可获得后续修改，无遗漏。</td></tr>
+<tr><td>DT-07</td><td>增量分段、过期 cursor、超过变化保留期。</td><td>顺序与续读标记明确；过期重读；记录不足返回 SNAPSHOT_REQUIRED。</td></tr>
+<tr><td>DT-08</td><td>读取大文本与多片文件，引用中途改变。</td><td>内容不静默截断；外部版本改变报错，不混合拼接。</td></tr>
+<tr><td>DT-09</td><td>授权撤销后读取资源、恢复带失效引用的卡片。</td><td>访问拒绝；卡片与说明可恢复；旧权限与锁定不构成文件冻结。</td></tr>
+<tr><td>DT-10</td><td>拖动控件、拖动把手、指定重叠布局、自动放置。</td><td>控件操作不移动卡片；布局冲突不移动旁人卡片；自动位置确定可见。</td></tr>
+<tr><td>DT-11</td><td>属性面板草稿与内联编辑、外部更新、断线恢复。</td><td>同页同卡只一个入口；草稿可保留；没有静默覆盖。</td></tr>
+<tr><td>DT-12</td><td>窄屏阅读、键盘输入与布局编辑。</td><td>主要操作可达，单列展示不改变共享网格坐标。</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="references"><h2>16 / 依据与后续设计</h2>
+<p>需求来源为<a href="chatgpt-conversation://6af32e7e-72fc-83e9-ab55-137d554f4515">「开源设计实例调研」对话</a>和本项目<a href="functional-specification.html">整体功能规格</a>。本次新增的字段、限额、分页寿命、回执保留规则、页面区域及保存时机均为设计建议，供后续评审与实现依据使用。</p>
+<p>协议事实参考 MCP 官方 <a href="https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/server/tools.mdx">Tools 文档</a>与<a href="https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/server/resources.mdx">Resources 文档</a>（核对日期：2026-11-11）。本项目自定义工具的名称、参数、分页与错误码由本文定义，不声称来自协议标准。</p>
+<p>后续技术设计需要另行确定接入与鉴权、协议承载、资源传输、页面状态同步、持久保存及备份策略。多看板、按钮事件、图表表格、批量编辑、完整历史回滚和主动调度仍属于整体规格的 P1 范围，不混入首版接口。</p>
+</section>
+<footer class="foot">AgentBoard · 详细功能规格 v0.2 · 2026-11-11<br>独立 HTML，无外部脚本与字体依赖。支持目录跳转、小窗口阅读和浏览器打印。</footer>
+</main></div></body></html>

@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="AgentBoard 整体功能规格：人与 Agent 共用的持久化黑板。">
+  <title>AgentBoard · 整体功能规格</title>
+  <style>
+    :root{--ink:#202d36;--muted:#61727c;--line:#dce4e5;--paper:#fff;--bg:#f2f5f3;--green:#165b4b;--tint:#e9f3ee;--amber:#81551a}
+    *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:24px}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.85 "Microsoft YaHei","PingFang SC",system-ui,sans-serif}a{color:var(--green);text-underline-offset:4px}a:focus-visible{outline:3px solid #c5892c;outline-offset:4px}::selection{background:#d2eadd}
+    .shell{max-width:1440px;margin:auto;display:grid;grid-template-columns:250px minmax(0,1fr);gap:46px;padding:40px 44px 80px}.sidebar{position:sticky;top:32px;align-self:start;max-height:calc(100vh - 64px);overflow:auto}.brand{font-size:21px;font-weight:750;letter-spacing:-.5px}.subbrand{font-size:12px;color:var(--muted);margin:3px 0 28px;letter-spacing:1px}.sidebar a{display:block;text-decoration:none;color:var(--muted);font-size:13px;padding:7px 10px;border-left:2px solid var(--line)}.sidebar a:hover{color:var(--green);border-color:var(--green);background:var(--tint)}.sidebar .note{font-size:12px;color:var(--muted);margin-top:24px}
+    main{min-width:0}.hero{padding:44px 48px;background:#143e35;color:#fff;border-radius:18px}.eyebrow{font-size:12px;letter-spacing:2px;color:#bcd9cb}.hero h1{font-size:38px;line-height:1.3;margin:14px 0 20px;letter-spacing:-1px}.hero .lead{font-size:19px;line-height:1.8;max-width:720px;color:#e2eee7}.meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:28px}.meta span{font-size:12px;padding:4px 11px;border:1px solid #507467;border-radius:20px}.intro{font-size:14px;color:var(--muted);margin:22px 4px 30px}
+    section{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:32px 38px;margin:24px 0}h2{font-size:24px;line-height:1.5;margin:0 0 22px;letter-spacing:-.4px}h2 .num{color:#7e9b8e;font-size:14px;display:inline-block;min-width:34px;vertical-align:middle}h3{font-size:18px;margin:26px 0 10px}p{margin:12px 0}ul,ol{padding-left:24px;margin:12px 0}li{margin:6px 0}strong{font-weight:700}.callout{background:var(--tint);border-left:3px solid var(--green);padding:14px 19px;border-radius:0 6px 6px 0;margin:20px 0}.callout p{margin:0}.small{font-size:13px;color:var(--muted)}.tag{white-space:nowrap;font-size:11px;padding:3px 7px;border-radius:4px;background:var(--tint);color:var(--green)}.later{background:#f8efdf;color:var(--amber)}
+    .table-wrap{overflow-x:auto;margin:15px 0}table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.8}th{text-align:left;background:#f0f5f2;color:#3d5a4d;font-weight:600}th,td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top}td:first-child{font-weight:600}code{font:13px/1.7 Consolas,monospace;color:#275d50;background:#eff5f1;padding:2px 5px;border-radius:4px;overflow-wrap:anywhere}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:20px 0}.mini{border:1px solid var(--line);border-radius:9px;padding:18px}.mini h3{margin:0 0 9px;font-size:16px}.mini p{font-size:14px;margin:0;color:var(--muted)}
+    .relationship{display:grid;grid-template-columns:1fr auto 1.4fr auto 1fr;gap:12px;align-items:center;margin:24px 0}.role{text-align:center;border:1px solid var(--line);border-radius:10px;padding:20px 12px}.role b{display:block}.role span{display:block;font-size:12px;color:var(--muted);margin-top:5px}.role.shared{background:var(--tint);border-color:#b3cfc1}.arrow{font-size:25px;color:var(--green)}.flow{counter-reset:step;list-style:none;padding:0}.flow li{counter-increment:step;position:relative;padding:0 0 16px 46px;border-left:1px solid var(--line);margin:0 0 0 15px}.flow li:last-child{border-left:0;padding-bottom:0}.flow li:before{content:counter(step);position:absolute;left:-16px;top:0;width:30px;height:30px;line-height:30px;text-align:center;border-radius:50%;background:var(--green);color:white;font-size:13px}.flow b{display:block}.flow p{margin:3px 0 0;font-size:14px;color:var(--muted)}
+    .board-demo{background:#f3f6f4;border:1px solid var(--line);border-radius:10px;padding:20px}.board-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:14px;margin-bottom:16px}.demo-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.demo-card{background:white;border:1px solid var(--line);border-radius:7px;padding:16px;font-size:14px}.demo-card b{display:block;margin-bottom:8px}.demo-card p{margin:0}.meter{height:6px;background:#dce6df;border-radius:8px;margin:16px 0;position:relative}.meter:before{content:"";display:block;width:25%;height:100%;background:var(--green);border-radius:8px}.meter:after{content:"";position:absolute;top:-5px;left:25%;width:16px;height:16px;background:var(--green);border:3px solid white;box-shadow:0 0 0 1px var(--green);border-radius:50%}.check-demo{display:inline-block;border:1px solid #86978c;width:14px;height:14px;margin-right:7px;vertical-align:-2px}.foot{color:var(--muted);font-size:12px;padding:12px 5px}.nowrap{white-space:nowrap}
+    @media(max-width:1050px){.shell{grid-template-columns:200px minmax(0,1fr);gap:24px;padding:28px 24px}.hero{padding:32px}.hero h1{font-size:32px}section{padding:26px}.cards{grid-template-columns:1fr}.relationship{gap:7px}.role{padding:15px 8px}}
+    @media(max-width:760px){.shell{display:block;padding:18px 14px 40px}.sidebar{position:static;max-height:none;margin-bottom:20px}.subbrand{margin-bottom:12px}.sidebar nav{display:flex;gap:6px;flex-wrap:wrap}.sidebar a{border:1px solid var(--line);border-radius:5px;padding:4px 8px;font-size:12px}.sidebar .note{display:none}.hero{padding:28px 23px}.hero h1{font-size:29px}.hero .lead{font-size:17px}section{padding:24px 19px}h2{font-size:22px}.relationship{grid-template-columns:1fr}.arrow{text-align:center;transform:rotate(90deg)}.demo-grid{grid-template-columns:1fr}th,td{padding:10px;min-width:95px}h2 .num{min-width:29px}}
+    @media print{@page{size:A4;margin:18mm}html{scroll-behavior:auto}body{background:white;font-size:10pt;line-height:1.65;color:#17241d}.shell{display:block;max-width:none;padding:0}.sidebar{display:none}.hero{background:white;color:#17241d;border:2px solid #165b4b;padding:22px;border-radius:0}.hero h1{font-size:26pt}.hero .lead,.eyebrow{color:#365a49}.meta span{border-color:#94ab9e}.intro{font-size:9pt}section{border:0;border-top:1px solid #b9c8be;border-radius:0;padding:20px 0;margin:18px 0}h2{font-size:17pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}table{font-size:9pt}tr,.mini,.callout,.demo-card{break-inside:avoid}.table-wrap{overflow:visible}thead{display:table-header-group}a{color:inherit}code{font-size:9pt}.foot{font-size:8pt}.cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  </style>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" aria-label="文档导航">
+    <div class="brand">AgentBoard<span style="color:#59967b">.</span></div>
+    <div class="subbrand">人与 AGENT 的共享黑板</div>
+    <nav aria-label="规格目录">
+      <a href="#position">01 定位与目标</a><a href="#scope">02 范围与版本边界</a><a href="#concepts">03 核心概念与角色</a><a href="#journey">04 典型协作流程</a><a href="#board">05 看板与用户操作</a><a href="#cards">06 卡片功能</a><a href="#agent">07 Agent 操作能力</a><a href="#sync">08 共享状态与变更规则</a><a href="#assets">09 图片与本地文件</a><a href="#protection">10 保护与恢复</a><a href="#quality">11 使用体验与异常反馈</a><a href="#acceptance">12 功能验收场景</a><a href="#future">13 后续扩展</a><a href="#basis">14 设计依据与约定</a>
+    </nav>
+    <p class="note">文档版本 0.1 · 功能设计稿<br>2026 年 11 月 11 日<br>仅约定功能与可观察行为</p>
+  </aside>
+  <main>
+    <header class="hero">
+      <div class="eyebrow">AGENTBOARD / FUNCTIONAL SPECIFICATION</div>
+      <h1>把重要信息留在桌面上，<br>让人与 Agent 接着一起改。</h1>
+      <p class="lead">一块持续存在的网页黑板。用户直接操作卡片，Agent 通过 MCP 读取和更新同一份内容，让对话形成的资料、参数与结论保持可见、可修改、可继续使用。</p>
+      <div class="meta"><span>整体功能规格</span><span>中文 · v0.1 设计稿</span><span>2026-11-11</span><span>首版范围与验收基线</span></div>
+    </header>
+    <p class="intro">本文承接「开源设计实例调研」对话中最后一轮明确的共享黑板需求。原对话中的建议已整理为可讨论的产品约定；本文不规定技术栈、内部架构、数据格式、通信细节或部署方式。卡片字段、MCP 方法与前端交互的进一步约定见<a href="detailed-functional-specification.html">详细功能规格 v0.2</a>。</p>
+
+    <section id="position">
+      <h2><span class="num">01</span>定位与目标</h2>
+      <p><strong>AgentBoard 是面向用户与 Agent 协作的通用共享黑板框架。</strong>产品提供网页看板与配套服务，并向 Agent 提供 MCP 操作能力。看板上的一切元素统称为「卡片」，可以承载文字、图片、文件以及交互控件。</p>
+      <div class="relationship" role="img" aria-label="用户通过网页，Agent 通过 MCP，共同读取和修改同一块持续保存的黑板">
+        <div class="role"><b>用户</b><span>网页查看 · 直接编辑</span></div><div class="arrow" aria-hidden="true">↔</div><div class="role shared"><b>同一块共享黑板</b><span>内容 · 控件值 · 布局 · 资源</span></div><div class="arrow" aria-hidden="true">↔</div><div class="role"><b>Agent</b><span>MCP 读取 · 创建 · 修改</span></div>
+      </div>
+      <div class="cards"><div class="mini"><h3>信息持续存在</h3><p>重要约束、待办、资料和阶段结论可跨页面关闭、服务正常重启及对话切换保留。</p></div><div class="mini"><h3>双方共同维护</h3><p>用户和 Agent 操作同一份卡片状态，创建者身份不自动决定卡片归属或编辑权。</p></div><div class="mini"><h3>用控件表达意图</h3><p>用户调整参数、勾选选项或补充文本，Agent 在后续读取中获得最新信息。</p></div></div>
+      <div class="callout"><p><strong>关键边界：</strong>看板保存共享信息，Agent 在工作时读取并使用这些信息。网页变化不会自动启动 Agent 推理；看板也不保证 Agent 永久记住已经读取过的内容。</p></div>
+      <p>成功标准：用户无需反复翻找聊天记录或复制控件值；Agent 无需为每次交互重新制作网页，即可维护可读、可操作的共享工作资料。</p>
+    </section>
+
+    <section id="scope">
+      <h2><span class="num">02</span>范围与版本边界</h2>
+      <p>本文将功能分为<strong>首版必须具备（P0）</strong>与<strong>后续扩展（P1）</strong>。以下是本次规格采用的范围建议，作为后续评审与验收基线。</p>
+      <div class="table-wrap"><table><thead><tr><th>范围</th><th>功能约定</th></tr></thead><tbody>
+        <tr><td><span class="tag">P0</span> 共享工作空间</td><td>提供一块明确标识的当前看板，支持持久保存、网页展示、Agent 访问及断线后的状态恢复。首版围绕单用户与其授权 Agent 的协作。</td></tr>
+        <tr><td><span class="tag">P0</span> 六类基础卡片</td><td>文本、图片、文件、滑条、勾选框、输入框；用户与 Agent 均能创建、读取、修改和删除允许操作的卡片。</td></tr>
+        <tr><td><span class="tag">P0</span> 看板整理</td><td>拖动卡片、调整尺寸、修改标题、查找与定位卡片；已保存的布局对双方可见。</td></tr>
+        <tr><td><span class="tag">P0</span> Agent 协作</td><td>卡片列表、完整读取、增删改、支持类型查询、看板快照、增量变化读取，以及允许范围内的资源添加和读取。</td></tr>
+        <tr><td><span class="tag">P0</span> 可靠编辑</td><td>局部修改、过时修改检测、重复请求保护、卡片锁定、删除后恢复、保存状态提示。</td></tr>
+        <tr><td><span class="tag later">P1</span> 扩展能力</td><td>多看板管理、更多卡片类型、分组、完整历史与回滚、跨卡片批量操作、事件消费、导入导出和多人协作。</td></tr>
+      </tbody></table></div>
+      <h3>本规格之外</h3>
+      <ul><li>内置聊天系统、模型调用与 Agent 执行调度；用户继续在已有 Agent 客户端中对话。</li><li>通用网页设计器、任意 HTML 或脚本卡片、应用代码生成与运行。</li><li>自动理解全部文件、自动提炼每轮聊天、自动判断工作结论是否正确。</li><li>通过文件卡片直接编辑原文件，以及运行文件、命令或仿真任务。</li></ul>
+    </section>
+
+    <section id="concepts">
+      <h2><span class="num">03</span>核心概念与角色</h2>
+      <div class="table-wrap"><table><thead><tr><th>概念</th><th>功能含义</th><th>约束</th></tr></thead><tbody>
+        <tr><td>看板</td><td>围绕一项工作持续维护的共享空间，包含卡片及布局。</td><td>有稳定标识和名称；所有操作须能确定目标看板，不能依赖猜测。</td></tr>
+        <tr><td>卡片</td><td>可独立识别、展示和操作的最小元素。</td><td>有稳定且唯一的标识；标题、位置和内容变化不改变身份。首版不支持原地转换卡片类型。</td></tr>
+        <tr><td>卡片定义</td><td>决定卡片如何被使用的说明与约束，例如滑条范围、步长、单位。</td><td>修改定义与修改当前值是不同的用户意图。</td></tr>
+        <tr><td>卡片状态</td><td>当前共享内容，例如正文、图片引用、数值或勾选状态。</td><td>显示值和 Agent 读取值在同一已保存版本下必须一致。</td></tr>
+        <tr><td>共享布局</td><td>卡片的位置、尺寸和排列关系。</td><td>整理布局不改变内容或控件值；页面滚动位置等个人浏览状态不作为共享内容。</td></tr>
+        <tr><td>资源</td><td>供图片卡片、文件卡片引用的图片或文件。</td><td>资源可被多张卡片使用；卡片与原始文件的生命周期分开。</td></tr>
+        <tr><td>版本与变更</td><td>标识某次已保存状态，以及其后的新增、修改、删除或恢复。</td><td>用于判断信息是否过时、读取近期变化和说明修改来源。</td></tr>
+      </tbody></table></div>
+      <h3>角色及默认权限</h3>
+      <p><strong>用户</strong>通过网页查看与整理看板，编辑卡片，添加资源，并管理锁定与访问范围。<strong>Agent</strong>通过 MCP 操作被授权的看板和资源。<strong>配套服务</strong>负责让两侧看到一致的已保存结果，并给出可理解的操作反馈。</p>
+      <p>普通卡片默认允许双方编辑，不设置「只有创建者可以修改」的隐含限制。卡片锁定与资源访问限制是明确的例外；Agent 无权自行扩大访问范围或解除用户锁定。</p>
+    </section>
+
+    <section id="journey">
+      <h2><span class="num">04</span>典型协作流程</h2>
+      <p>以下以原对话中的 PID 讨论为例，仅说明协作行为，不约定控制算法或计算功能。</p>
+      <ol class="flow">
+        <li><b>建立共享背景</b><p>用户打开看板并添加任务说明、参考文件。Agent 连接后确认当前看板，读取已有内容和支持的卡片类型。</p></li>
+        <li><b>把讨论对象放上黑板</b><p>Agent 添加「Kp」滑条，初始值为 2.5；添加「允许的最大超调量」数值输入框，值为 20%，并保留参数含义和单位。</p></li>
+        <li><b>用户直接表达调整</b><p>用户将 Kp 改为 3.0、补充限制条件，并移动参考资料卡片。页面明确显示保存结果。</p></li>
+        <li><b>在对话中继续工作</b><p>用户回到 Agent 客户端继续讨论。Agent 重新读取相关卡片或近期变化，得到 Kp=3.0 和最大超调量=20%。</p></li>
+        <li><b>结果回到同一块黑板</b><p>Agent 更新分析文字或添加结果图片。用户看到变化，可以继续编辑、锁定重要结论或恢复误删卡片。</p></li>
+        <li><b>下次从已保存状态继续</b><p>关闭网页或结束对话后再次打开，卡片与布局仍保留；新会话通过读取看板恢复工作背景。</p></li>
+      </ol>
+      <h3>概念性看板示意</h3>
+      <div class="board-demo" aria-label="静态看板示意，非实际可操作控件">
+        <div class="board-head"><strong>控制器设计 / 当前看板</strong><span class="small">已保存 · 静态示意</span></div>
+        <div class="demo-grid"><div class="demo-card"><b>任务说明 · 文本</b><p>讨论 PID 参数，保留已确认的约束与阶段结果。</p></div><div class="demo-card"><b>比例增益 Kp · 滑条</b><p>当前值 2.5 · 范围 0～10 · 步长 0.1</p><div class="meter" aria-hidden="true"></div></div><div class="demo-card"><b>允许的最大超调量 · 数值输入</b><p>20 %</p></div><div class="demo-card"><b>实验验证 · 勾选框</b><p><span class="check-demo" aria-hidden="true"></span>已通过实验验证：否</p></div></div>
+      </div>
+      <p class="small">示意仅表达信息关系，不限定最终页面视觉样式；移动卡片表示整理工作资料，不表示修改产品界面设计。</p>
+    </section>
+
+    <section id="board">
+      <h2><span class="num">05</span>看板与用户操作</h2>
+      <div class="table-wrap"><table><thead><tr><th>编号</th><th>功能</th><th>预期行为</th></tr></thead><tbody>
+        <tr><td>B-01</td><td>打开与识别</td><td>显示看板名称、稳定标识及连接状态。空看板提供添加卡片的入口，并说明 Agent 也可向此处推送内容。</td></tr>
+        <tr><td>B-02</td><td>查看与定位</td><td>查看卡片标题、类型和主要内容；可按标题查找，并通过卡片标识定位到具体卡片。长内容可展开阅读。</td></tr>
+        <tr><td>B-03</td><td>添加与编辑</td><td>用户可选择基础类型创建卡片，编辑标题、内容和控件定义；创建后立即获得可供 Agent 引用的稳定标识。</td></tr>
+        <tr><td>B-04</td><td>整理布局</td><td>支持拖动、调整尺寸及自动安排新卡片位置。默认排列避免遮挡已有卡片；空间不足时允许延展工作区域。</td></tr>
+        <tr><td>B-05</td><td>操作控件</td><td>控件操作与卡片拖动可明确区分。用户拖动滑条不会误移整张卡片，输入文字不会触发看板整理。</td></tr>
+        <tr><td>B-06</td><td>查看变更来源</td><td>卡片可查看最近修改时间及修改者；Agent 新增或更新内容时提供可识别的提示，不强制打断用户正在编辑的内容。</td></tr>
+        <tr><td>B-07</td><td>保存与再次打开</td><td>已保存的内容、控件定义、控件值、锁定状态和布局持续保留。刷新页面、重新打开看板或正常重启服务后可继续使用。</td></tr>
+      </tbody></table></div>
+      <p>共享的是卡片布局关系。在不同窗口尺寸下，允许采用便于阅读的展示方式；仅缩小窗口不应被视为用户主动修改共享布局。</p>
+    </section>
+
+    <section id="cards">
+      <h2><span class="num">06</span>卡片功能</h2>
+      <p>所有卡片都应能表达：唯一标识、所属看板、类型、标题、内容摘要、位置与尺寸、当前状态、锁定状态和最近修改信息。摘要用于快速浏览，不能代替完整内容或精确控件值。</p>
+      <div class="table-wrap"><table><thead><tr><th>类型 / 编号</th><th>承载内容</th><th>双方可执行操作</th><th>有效性规则</th></tr></thead><tbody>
+        <tr><td>文本 C-01</td><td>说明、约束、结论、临时笔记；支持纯文本及基础 Markdown 展示。</td><td>读取和编辑完整正文、标题；保留换行及基本结构。</td><td>正文与渲染展示含义一致；文本中的脚本或指令只作为内容，不自动执行。</td></tr>
+        <tr><td>图片 C-02</td><td>图片资源、说明文字与来源信息。</td><td>添加、查看、放大、替换图片，编辑说明；Agent 可获取允许访问的图片内容。</td><td>资源不可用时保留卡片和说明，并显示具体原因；不假装已成功读取图片。</td></tr>
+        <tr><td>文件 C-03</td><td>导入的文件副本或受控本地文件引用，以及用途说明。</td><td>添加、读取元信息、访问允许读取的文件内容、替换引用；用户可预览或获取文件。</td><td>明确显示导入／引用方式；不支持预览时仍保留文件获取入口；不自动执行文件。</td></tr>
+        <tr><td>滑条 C-04</td><td>数值、最小值、最大值、步长、单位和用途说明。</td><td>用户拖动调整数值；双方均可修改数值及范围等定义。</td><td>最小值小于最大值、步长为正；值在范围内，并符合以最小值为起点的步长约束。</td></tr>
+        <tr><td>勾选框 C-05</td><td>含义明确的标签与是／否状态。</td><td>切换状态，编辑标签与说明。</td><td>首版只含选中和未选中两种状态；未选中不等于信息缺失。</td></tr>
+        <tr><td>输入框 C-06</td><td>单行文本或数值，可附单位、提示、必填与取值限制。</td><td>输入与编辑当前值；修改允许的输入约束。</td><td>明确区分空值、零和空字符串；不符合类型或限制的输入不成为已保存状态。</td></tr>
+      </tbody></table></div>
+      <h3>控件定义与当前值</h3>
+      <p>修改标签不应重置数值，调整卡片大小不应改变内容。若修改定义会使现有值失效，应拒绝该次修改并说明原因；操作者可以同时提供有效的新定义和新值，一并完成修改。</p>
+      <p>创建控件时须提供有效初始值，或明确采用该类型公开说明的默认值。必填输入框不得以缺失值创建为有效状态；可选输入框允许保持空值。</p>
+      <div class="callout"><p><strong>图片可读取，不等于图片已被理解。</strong>框架须提供图片内容及附带说明；图片中文字的识别、图像语义理解和文件内容分析由具备相应能力的 Agent 完成。首版不保证自动 OCR 或自动生成准确摘要。</p></div>
+    </section>
+
+    <section id="agent">
+      <h2><span class="num">07</span>Agent 操作能力</h2>
+      <p>Agent 注册并获准连接后，应能够发现当前看板及可用能力，随后仅通过 MCP 指令完成常规看板操作。下表名称沿用原讨论，<strong>仅作为能力名称示意，不规定接口签名、参数结构或返回格式。</strong></p>
+      <div class="table-wrap"><table><thead><tr><th>编号 / 能力</th><th>功能结果</th></tr></thead><tbody>
+        <tr><td>A-01 确认看板</td><td>获得当前可访问看板的标识、名称及自身操作权限。首版可只返回一块看板；目标不存在或无权访问时明确拒绝。</td></tr>
+        <tr><td>A-02 查询类型<br><code>get_card_types</code></td><td>了解支持的卡片类型、用途、允许的内容与约束、默认值和操作限制。扩展类型在可用前应能被发现。</td></tr>
+        <tr><td>A-03 列出卡片<br><code>get_card_list</code></td><td>获取卡片标识、类型、标题、布局、摘要及状态新旧标记；大量结果应可分段读取，不能无提示遗漏。</td></tr>
+        <tr><td>A-04 读取卡片<br><code>read_card</code></td><td>获取完整正文、控件定义与当前值、资源信息、锁定状态及修改信息。大内容或资源需分步获取时，应明确可继续读取的范围与方式。</td></tr>
+        <tr><td>A-05 推送卡片<br><code>push_card</code></td><td>按已支持类型创建卡片，可指定标题、内容、控件定义及期望布局；未指定位置时由看板安排。返回稳定标识与实际创建结果。</td></tr>
+        <tr><td>A-06 编辑卡片<br><code>edit_card</code></td><td>按标识修改指定内容、定义或布局，其余内容保持原样。返回保存后的实际结果；遇到锁定或过时内容时说明原因。</td></tr>
+        <tr><td>A-07 删除与恢复<br><code>delete_card</code> / <code>restore_card</code></td><td>删除后移出正常视图，仍可从已删除列表找到并恢复。恢复沿用原标识；重复删除或恢复不产生额外副本。</td></tr>
+        <tr><td>A-08 看板快照<br><code>get_board_snapshot</code></td><td>获取同一时间点下的卡片集合与关键状态，并标识该状态的新旧程度。省略正文或资源内容时必须说明，支持按卡片补充读取。</td></tr>
+        <tr><td>A-09 增量变化<br><code>get_changes</code></td><td>读取已知状态之后的新增、修改、删除、恢复及保护状态变化，指出受影响卡片和修改者；不应遗漏删除或把多次变更误报为当前完整状态。</td></tr>
+        <tr><td>A-10 资源访问</td><td>在允许范围内添加图片、导入文件或建立本地引用，并读取资源元信息和内容。资源不可访问时明确反馈，不以路径或摘要冒充内容。</td></tr>
+      </tbody></table></div>
+      <p>Agent 应能区分「请求已提交」「已保存」「失败」与「结果未知」。调用失败须给出可采取的下一步，例如重新读取、修正数值或请求用户解除锁定。看板内容属于工作资料，其文字本身不构成新增权限或执行授权。</p>
+    </section>
+
+    <section id="sync">
+      <h2><span class="num">08</span>共享状态与变更规则</h2>
+      <div class="table-wrap"><table><thead><tr><th>编号</th><th>规则</th><th>可观察行为</th></tr></thead><tbody>
+        <tr><td>S-01</td><td>双方共享已保存结果</td><td>任何一侧成功保存的修改，都成为另一侧后续读取的依据。网页正常连接时自动呈现外部更新，无需用户手动刷新。</td></tr>
+        <tr><td>S-02</td><td>草稿与保存区分</td><td>编辑中的文本或拖动中的暂态值可先作为本地草稿；只有明确保存成功的状态才成为双方共同依据。何时提交可以依控件交互确定，但状态必须可见。</td></tr>
+        <tr><td>S-03</td><td>只改明确指定的内容</td><td>Agent 仅修改标题时，不得把自己先前读到的旧数值写回。相同规则也适用于用户操作。</td></tr>
+        <tr><td>S-04</td><td>过时修改不得静默覆盖</td><td>基于旧版本的编辑或删除应被拒绝，并指出已有新状态。操作者重新读取后可重新提交；首版允许采用整张卡片范围的保守冲突判断。</td></tr>
+        <tr><td>S-05</td><td>重复提交结果稳定</td><td>对同一操作的重试不会重复创建卡片或重复应用修改；须能查明该操作是否已经成功，或明确说明结果仍未知。</td></tr>
+        <tr><td>S-06</td><td>单次修改完整成立</td><td>同一张卡片的一次修改全部有效才保存；例如修改滑条范围与数值时，不出现范围已改、数值被拒绝的半完成状态。</td></tr>
+        <tr><td>S-07</td><td>断线后重新核对</td><td>连接中断时提示已保存状态可能过时；恢复后重新读取当前状态。未提交草稿保留在当前页面中供用户处理，不自动覆盖期间的新修改。</td></tr>
+        <tr><td>S-08</td><td>增量不可用时明确退回快照</td><td>变化记录不足以完整覆盖请求区间时，提示重新读取看板快照；不能把部分变化冒充完整结果。</td></tr>
+      </tbody></table></div>
+      <h3>并发示例</h3>
+      <p>Agent 读取 Kp=2.5 后，用户将其保存为 3.0。若 Agent 随后基于旧状态修改该卡片，应获得冲突提示；重新读取后，只更新需要修改的标题或说明，保留 Kp=3.0。用户正在编辑而收到 Agent 新版本时，也须能看到冲突并保留自己的未提交文字。</p>
+      <p class="small">首版不要求逐字符协同编辑、自动合并复杂冲突或离线编辑后自动同步。本文不规定同步耗时数值，但要求操作状态明确且同步无需手动刷新。</p>
+    </section>
+
+    <section id="assets">
+      <h2><span class="num">09</span>图片与本地文件</h2>
+      <p>资源能力是图片与文件卡片的共同基础。用户可选择本地文件添加到看板；Agent 可从允许访问的来源添加资源。首版同时定义以下两种使用方式，以覆盖「添加文件」与「引用工作目录原文件」两类需求。</p>
+      <div class="table-wrap"><table><thead><tr><th>方式</th><th>用户含义</th><th>原文件发生变化时</th></tr></thead><tbody>
+        <tr><td>导入副本</td><td>向看板保存一份独立副本，适合资料、截图和阶段结果。</td><td>原文件移动、删除或修改，不改变已导入副本。要更新需显式替换资源。</td></tr>
+        <tr><td>受控引用</td><td>关联用户已允许访问的位置中的原文件，适合持续更新的工作文件。</td><td>再次读取或刷新预览时核对资源状态；可访问时获取当前内容，失效时保留引用信息并提示。首版不承诺自动监控原文件每次修改。</td></tr>
+      </tbody></table></div>
+      <ul><li><strong>R-01 可理解的来源：</strong>显示资源名称、类型、大小（可取得时）、说明与引用方式。引用文件读取结果应带可辨识的读取时间或内容版本信息，避免将旧预览误认为最新文件。</li><li><strong>R-02 明确的访问范围：</strong>只有被用户选中导入或处于获准引用范围内的资源可被读取。无法建立受控引用时说明原因，并允许改为导入副本。</li><li><strong>R-03 预览与读取：</strong>图片应可查看；其他文件能预览则预览，不能预览时允许获取原内容并提示限制。文件名、说明和路径不是文件全文。</li><li><strong>R-04 可辨别的失败：</strong>区分资源不存在、访问被撤销、格式不支持、内容过大等状态；读取失败不删除卡片或清空先前说明。</li><li><strong>R-05 生命周期分离：</strong>删除卡片不删除用户的原文件，也不破坏其他卡片对同一资源的引用。首版删除仍可恢复期间，导入副本须保持可恢复。</li><li><strong>R-06 引用恢复：</strong>原文件移动后可由用户重新指定引用目标；恢复已删除卡片并不保证已失效的外部文件重新可用。</li></ul>
+      <p>被引用原文件在看板之外发生的变化，不自动等同于一次卡片修改；Agent 需要最新文件时应重新读取资源，不能仅凭卡片变更记录推断文件未改变。</p>
+    </section>
+
+    <section id="protection">
+      <h2><span class="num">10</span>保护与恢复</h2>
+      <h3>P-01 卡片锁定</h3>
+      <p>用户可锁定重要卡片。锁定后双方仍可读取，但标题、内容、定义、控件值、布局和删除操作均不可修改。用户须先显式解锁再编辑；Agent 可以报告需要修改的原因，但不能自行解锁。首版不引入逐字段保护或审批流。</p>
+      <h3>P-02 删除与恢复</h3>
+      <p>删除操作使卡片进入可恢复的已删除列表，正常卡片列表不再展示；双方均可查询并恢复自己有权操作的卡片。恢复保留原标识、内容和资源关联，尽量恢复原位置；原位置被占用时安排到可见位置并说明布局调整。</p>
+      <p>首版不提供永久删除或自动清空已删除列表。恢复能力不等于完整版本回滚，编辑过的历史正文并不因此自动可恢复。</p>
+      <h3>P-03 来源可追踪</h3>
+      <p>每次已保存修改可识别修改者类别、时间及最新版本。近期变化可供 Agent 读取，用户可查看卡片最近修改信息。逐次差异、任意历史版本浏览和回滚属于后续能力。</p>
+      <h3>P-04 操作范围受控</h3>
+      <p>无权访问的看板或资源不能通过卡片标识绕过限制。卡片中的文字、Markdown、图片说明和文件内容按资料展示，不自动转化为脚本、系统命令或对其他资源的访问权限。</p>
+    </section>
+
+    <section id="quality">
+      <h2><span class="num">11</span>使用体验与异常反馈</h2>
+      <div class="table-wrap"><table><thead><tr><th>情况</th><th>用户可见反馈</th><th>Agent 可获知结果</th></tr></thead><tbody>
+        <tr><td>保存成功</td><td>显示已保存及实际值；外部更新到达后能识别变更来源。</td><td>获得实际保存结果和当前状态标记。</td></tr>
+        <tr><td>输入无效</td><td>指出具体字段、有效范围与修正方向，保留待修正输入。</td><td>说明违反的类型或约束；不产生部分修改。</td></tr>
+        <tr><td>内容已更新</td><td>提示存在新版本，保留当前页面的草稿以供重新编辑。</td><td>说明原修改未生效，并引导重新读取。</td></tr>
+        <tr><td>卡片已锁定或删除</td><td>展示锁定提示或已删除状态，提供有权限的解锁／恢复入口。</td><td>区分锁定、已删除、不存在与无权限；不泄露无权限对象的内容。</td></tr>
+        <tr><td>断线或结果未知</td><td>显示连接异常或保存结果待确认，不将其显示为成功。</td><td>明确操作结果是否已知；重试不得产生重复副本。</td></tr>
+        <tr><td>未知卡片类型</td><td>保留标题、类型及不可展示提示，避免整块看板失效。</td><td>读取已有基础信息；新建不支持类型时明确拒绝并提供可用类型。</td></tr>
+      </tbody></table></div>
+      <ul><li><strong>Q-01 中文可读：</strong>主要界面、卡片标签与错误提示支持中文；单位和数值不得依赖模糊的视觉推断。</li><li><strong>Q-02 基本可访问性：</strong>基础控件具备可识别名称、键盘操作与可见焦点；状态不单靠颜色区分。</li><li><strong>Q-03 大内容可处理：</strong>长文本、大量卡片或大文件出现展示／读取限制时明确提示，并提供继续读取或获取原文件的途径。</li><li><strong>Q-04 小窗口可使用：</strong>内容可滚动与展开，主要操作保持可达；窗口变化不造成内容丢失。</li><li><strong>Q-05 保存承诺清晰：</strong>已明确保存成功的数据在正常重启后保留；当前页面草稿不承诺跨关闭或崩溃恢复。存在草稿时提示其未保存状态。</li></ul>
+    </section>
+
+    <section id="acceptance">
+      <h2><span class="num">12</span>功能验收场景</h2>
+      <p>以下均为首版功能验收项。验证关注用户和 Agent 实际看到的结果，不依赖具体实现方式。</p>
+      <div class="table-wrap"><table><thead><tr><th>场景</th><th>操作</th><th>通过标准</th><th>关联</th></tr></thead><tbody>
+        <tr><td>AT-01 双方建卡</td><td>用户与 Agent 分别创建六类基础卡片。</td><td>网页可查看；Agent 可列出和读取；所有卡片有独立稳定标识。</td><td>B-03、C-01～06、A-03～05</td></tr>
+        <tr><td>AT-02 参数协作</td><td>Agent 创建 Kp=2.5、最大超调量=20%；用户将 Kp 保存为 3.0；Agent 再读。</td><td>Agent 得到 3.0 和 20%，含相应含义与单位，无需用户复制数值。</td><td>C-04、C-06、S-01</td></tr>
+        <tr><td>AT-03 双向更新</td><td>用户编辑文本，Agent 读取；Agent 更新该文本，用户保持页面打开。</td><td>双方获得最新正文；网页无需手动刷新，修改来源可识别。</td><td>B-06、A-04、A-06、S-01</td></tr>
+        <tr><td>AT-04 局部修改</td><td>在当前版本上仅修改标题或布局。</td><td>正文、控件定义和当前值均保持原样。</td><td>B-04、S-03</td></tr>
+        <tr><td>AT-05 并发冲突</td><td>双方读取同一卡片，用户先保存新值，Agent 再提交基于旧状态的修改或删除。</td><td>旧操作被拒绝并提示冲突；用户的新值保留；重新读取后可继续操作。</td><td>S-04</td></tr>
+        <tr><td>AT-06 无效值</td><td>提交越界滑条值、无效数值输入，或将范围缩小到不包含当前值。</td><td>拒绝保存并指出原因；原定义与值不发生部分改变。提交有效的新定义和新值可一并成功。</td><td>C-04、C-06、S-06</td></tr>
+        <tr><td>AT-07 持久保存</td><td>编辑内容、调整布局并保存，然后关闭页面、结束对话、正常重启服务后重新读取。</td><td>标识、内容、控件值、布局与锁定状态保留。</td><td>B-07、Q-05</td></tr>
+        <tr><td>AT-08 图片与文件</td><td>添加图片、导入文件和受控引用；分别由用户与 Agent 读取。</td><td>图片内容可访问；文件元信息与内容可取得；不支持预览或理解时明确提示限制。</td><td>C-02、C-03、R-01～03</td></tr>
+        <tr><td>AT-09 资源失效</td><td>修改或移走引用原文件，再次读取；同时检查已导入副本。</td><td>引用返回当前内容或明确失效原因；导入副本保持原样；卡片说明不丢失。</td><td>R-04、R-06</td></tr>
+        <tr><td>AT-10 卡片锁定</td><td>用户锁定卡片，双方尝试修改内容、布局及删除；随后用户解锁。</td><td>锁定期间操作均被拒绝，读取可用；解锁后按原权限正常编辑。</td><td>P-01</td></tr>
+        <tr><td>AT-11 删除恢复</td><td>删除并恢复一张带资源的卡片，其原位置已被占用。</td><td>删除后可在已删除列表找到；恢复保持原标识与内容，位置调整明确；原文件和其他引用不受影响。</td><td>A-07、P-02、R-05</td></tr>
+        <tr><td>AT-12 重复与断线</td><td>同一创建操作因结果未知而重试；用户断线期间保留草稿，再恢复连接。</td><td>最多产生一张目标卡片；显示可确认的操作结果；重连获取最新状态且不静默覆盖草稿或远端修改。</td><td>S-05、S-07</td></tr>
+        <tr><td>AT-13 增量读取</td><td>记录快照后依次新增、修改、删除、恢复卡片，再请求变化。</td><td>变更完整可辨识；区间过旧时明确要求重新取快照，不能返回伪完整结果。</td><td>A-08、A-09、S-08</td></tr>
+        <tr><td>AT-14 访问边界</td><td>尝试读取未授权文件、修改锁定卡片，以及提交含脚本的文本。</td><td>未授权读取和锁定修改被拒绝；文本可安全作为资料呈现，不自动执行。</td><td>R-02、P-01、P-04</td></tr>
+        <tr><td>AT-15 使用边界</td><td>查询类型、定位卡片、以小窗口和键盘操作基础控件；只调整网页参数，不向 Agent 发起新任务。</td><td>基础操作可完成，值与状态可读；看板记录修改，但不声称 Agent 已自动开始处理。</td><td>A-02、B-02、Q-01～04、定位边界</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <section id="future">
+      <h2><span class="num">13</span>后续扩展</h2>
+      <p>以下方向保留产品空间，但不作为首版交付承诺。新增卡片类型应继续复用「发现、创建、读取、编辑、删除」的统一操作方式。</p>
+      <div class="table-wrap"><table><thead><tr><th>方向</th><th>用户价值</th><th>需进一步明确的功能边界</th></tr></thead><tbody>
+        <tr><td>多看板与分组</td><td>按项目分开工作空间，折叠和整理相关卡片。</td><td>看板创建、切换、归档、跨板移动和组内操作规则。</td></tr>
+        <tr><td>选择框、按钮</td><td>表达有限选项，提交一次明确的操作意图。</td><td>按钮点击是独立事件；连续两次点击须能区分，需定义待处理、已处理与失败反馈。</td></tr>
+        <tr><td>图表、表格、代码与画布</td><td>承载更复杂的结果、结构化资料和空间关系。</td><td>各类型的读取语义、编辑范围及可导出内容。</td></tr>
+        <tr><td>完整历史与回滚</td><td>查看差异、理解演变、恢复误改。</td><td>记录保留范围、回滚与当前编辑冲突、资源历史可用性。</td></tr>
+        <tr><td>批量修改与搜索</td><td>高效整理多张卡片，查找正文和标签。</td><td>批量失败是否全部撤销，以及跨卡片保护规则。</td></tr>
+        <tr><td>导入导出与模板</td><td>迁移工作资料、复用常见协作场景。</td><td>资源随附、外部引用失效、卡片身份与重复导入处理。</td></tr>
+        <tr><td>多人、多 Agent 与主动触发</td><td>扩展协作角色，支持明确请求后启动工作。</td><td>身份、权限、事件归属和执行反馈；主动启动 Agent 需要独立定义任务调度能力。</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <section id="basis">
+      <h2><span class="num">14</span>设计依据与约定</h2>
+      <p>主要依据：<a href="chatgpt-conversation://6af32e7e-72fc-83e9-ab55-137d554f4515">「开源设计实例调研」对话</a>，重点采用最后一轮中用户关于「网页前端看板 + 后端服务」「Agent 通过 MCP 推送与读取卡片」「用户直接添加和操作卡片」「通用卡片操作封装」的明确需求。</p>
+      <div class="table-wrap"><table><thead><tr><th>来源层次</th><th>本文处理</th></tr></thead><tbody>
+        <tr><td>用户明确需求</td><td>保留共享草稿纸定位、文本／图片／交互控件、用户本地文件引用、双方读写以及 MCP 封装。</td></tr>
+        <tr><td>原对话中的设计建议</td><td>吸收稳定卡片标识、定义与状态分离、快照与增量读取、资源独立管理、并发保护、锁定和可恢复删除。</td></tr>
+        <tr><td>本规格新增的范围决定</td><td>首版单看板、六类基础卡片、整卡锁定、首版无永久删除、引用文件按读取核对、P0／P1 划分及验收场景。这些是设计建议，尚不表示用户逐项确认。</td></tr>
+        <tr><td>未沿用的内容</td><td>原对话中的技术选型、代码示例、协议版本、安装命令和内部模块划分；不对其中第三方产品的现状作背书。</td></tr>
+      </tbody></table></div>
+      <p>本文中的「必须」「应」表达该设计稿的目标行为，不表示产品已经实现。后续技术设计应以本文约定的功能结果为依据；若调整首版范围，应同步更新对应验收项。</p>
+    </section>
+    <footer class="foot">AgentBoard · 整体功能规格 v0.1 · 2026-11-11<br>独立 HTML 文档，无外部字体或脚本依赖；支持浏览器阅读与打印。</footer>
+  </main>
+</div>
+</body>
+</html>
