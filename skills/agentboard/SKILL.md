@@ -62,13 +62,19 @@ description: 使用 AgentBoard MCP 维护人与 Agent 共用的持久化黑板�
 
 ## 生成交互数学演示
 
-当拖动参数、几何运动或动画有助理解时，可生成interactive卡片，围绕用户操作继续讨论。具体数学内容由演示程序实现，遵循用户对讲解和板书的范围要求。
+当拖动参数、几何运动或动画有助理解时，可生成 `interactive` 卡片。根据当前问题编写演示程序，遵循用户对讲解和板书的范围要求。
 
-创建或修改演示前，读取 [交互卡片接口与示例](C:/Tools/AgentBoard/doc/interactive-cards.md)，并查询get_card_types(type="interactive")。用props.source提交完整HTML/CSS/JavaScript，props.initial_state定义初始参数，state.values保存当前参数；控件和图可放在同一卡片内，跨卡片联动再设置props.bindings。原生SVG/Canvas和内置Board.math可用于绘图与公式，使用Board.onChange接收参数、Board.setState保存自身参数、Board.rendered报告绘图完成；异步绘图先调用Board.deferReady。
+先明确希望用户观察的数学关系，选取有明确含义的参数。优先把控件和图放在同一卡片；复用已有共享参数或让多张图共用参数时，再使用跨卡绑定。展示后指出具体操作与观察点，例如“改变实部，比较连续相角的变化方向”，围绕用户的操作继续讲解。
 
-MCP只改源码时保留values；改values时先读最新对象、合并目标字段，再提交完整values。绑定只读，可引用来源的/state/value等JSON Pointer，不能自引用或形成环。用户反馈后读取values及绑定来源；浏览器中的即时重绘不会自动触发Agent推理。
+创建或修改演示前，读取 [交互卡片接口与示例](C:/Tools/AgentBoard/doc/interactive-cards.md)，并查询 `get_card_types(type="interactive")`：
 
-创建后用get_board_screenshot检查data.interactive、warnings和math_errors，确认程序就绪与关键数学情形正确。截图会携带绑定的冻结参数，不写回状态。优先使用内联代码和已提供的库；程序支持范围与隔离限制见接口文档。旧MCP进程需重连加载新类型。
+- `props.source` 提交完整HTML/CSS/JavaScript，`props.initial_state` 定义重置基线，`state.values` 保存当前共享参数。使用原生SVG/Canvas绘图、`Board.math` 渲染公式；代码和依赖以内联及内置库为准。
+- 使用 `Board.onChange` 接收快照、`Board.setState` 保存自身参数、`Board.rendered` 报告绘图完成；异步绘图先调用 `Board.deferReady`。根据快照中的 `readOnly` 禁用写控件，在 `mode="screenshot"` 时显示可复现的一帧。
+- `props.bindings` 提供只读输入，可引用来源的 `/state/value` 等JSON Pointer，不能自引用或形成环。绑定值与自身参数分别读取；修改来源使用正常的MCP编辑接口。
+- MCP只改源码时保留values；改values时先读最新对象、合并目标字段，再提交完整values。用户反馈后读取values及绑定来源，再解释当前图形；浏览器即时重绘不会自动触发Agent推理。
+- 创建后用 `get_board_screenshot` 检查 `data.interactive`、`warnings` 和 `math_errors`，确认图中演示就绪、标签可读及关键数学情形正确。单卡截图也会携带绑定的冻结参数，不写回状态。
+
+程序支持范围与隔离限制见接口文档。旧MCP进程需重连加载新类型；若当前工具目录不识别interactive，先处理连接版本，再创建演示。
 
 ## 用截图检查布局
 
