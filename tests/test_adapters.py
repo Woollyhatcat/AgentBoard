@@ -50,7 +50,7 @@ class AdapterTests(unittest.TestCase):
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
             {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
                 "name": "push_card", "arguments": {"board_id": "board_local", "command_id": "stdio-test", "card": {
-                    "type": "text", "type_version": "1.0", "title": "真实 MCP 进程", "props": {}, "state": {"text": "中文🙂"}}}}},
+                    "type": "text", "type_version": "1.0", "title": "真实 MCP 进程", "props": {"font_size": 24}, "state": {"text": "中文🙂"}}}}},
         ]
         entry = Path(__file__).resolve().parent.parent / "scripts" / "mcp_server.py"
         result = subprocess.run([sys.executable, str(entry), "--no-web", "--data-dir", self.temp.name],
@@ -61,6 +61,8 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(len(lines), 2)
         card = lines[1]["result"]["structuredContent"]["data"]["card"]
         self.assertEqual(card["state"]["text"], "中文🙂")
+        self.assertEqual(card["props"]["font_size"], 24)
+        self.assertEqual(card["layout"]["space"], "world")
         read = self.service.call("read_card", {"board_id": "board_local", "card_id": card["id"]})
         self.assertEqual(read["data"]["card"], card)
 
@@ -111,6 +113,20 @@ class AdapterTests(unittest.TestCase):
         self.assertTrue(headers["Content-Type"].startswith("text/plain"))
         self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
         self.assertEqual(self.request(port, "GET", "/../agentboard.sqlite3")[0], 404)
+
+    def test_offline_renderer_assets_and_vendor_boundary(self):
+        port = self.start_http()
+        for path, mime in (("/canvas.js", "javascript"), ("/render.js", "javascript"),
+                           ("/vendor/katex/dist/katex.min.js", "javascript"),
+                           ("/vendor/katex/dist/katex.min.css", "text/css"),
+                           ("/vendor/katex/dist/fonts/KaTeX_Main-Regular.woff2", "font/woff2")):
+            status, headers, body = self.request(port, "GET", path)
+            self.assertEqual(status, 200, path)
+            self.assertIn(mime, headers["Content-Type"])
+            self.assertTrue(body)
+        for path in ("/vendor/../../service.py", "/vendor/%2e%2e/%2e%2e/service.py",
+                     "/vendor/manifest.json", "/vendor/katex/LICENSE"):
+            self.assertEqual(self.request(port, "GET", path)[0], 404, path)
 
 
 if __name__ == "__main__":

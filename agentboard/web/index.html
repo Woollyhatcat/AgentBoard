@@ -6,6 +6,12 @@
   <meta name="color-scheme" content="light">
   <title>AgentBoard · 共享工作黑板</title>
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/vendor/katex/dist/katex.min.css">
+  <script src="/vendor/markdown-it/dist/browser/markdown-it.umd.min.js" defer></script>
+  <script src="/vendor/dompurify/dist/purify.min.js" defer></script>
+  <script src="/vendor/katex/dist/katex.min.js" defer></script>
+  <script src="/render.js" defer></script>
+  <script src="/canvas.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
@@ -27,7 +33,7 @@
       <div class="board-toolbar"><div class="view-label"><span>▦</span> 所有卡片 <span class="count" id="card-count">0</span></div><div class="tools"><label class="search"><span>⌕</span><input id="search" type="search" aria-label="搜索标题或完整卡片标识" placeholder="搜索标题或卡片标识"><kbd>/</kbd></label><button class="secondary" id="import-btn">↥ <span>导入资源</span></button></div></div>
       <div id="offline-banner" class="banner warning" hidden>连接已断开。当前草稿仍在此页面中，恢复连接后将先核对未确认操作。</div>
       <div class="canvas-wrapper"><div id="canvas" class="canvas" aria-label="卡片画布"></div><section id="empty" class="empty" hidden><div class="empty-art"><span>▤</span><span>☷</span><span>◉</span></div><span class="eyebrow">A LITTLE SPACE FOR YOUR NEXT IDEA</span><h2>从第一张卡片开始</h2><p>记下目标、放入资料，或用控件表达你的想法。<br>连接 Agent 后，它也可以向这块黑板添加和更新卡片。</p><button class="primary" id="first-card-btn">＋ 添加第一张卡片</button><button class="text-button" id="example-btn">添加 PID 协作示例 <span>→</span></button></section><div id="no-results" class="empty compact" hidden><h2>没有找到匹配的卡片</h2><p>试试卡片标题或完整标识。</p><button class="secondary" id="clear-search">清除筛选</button></div></div>
-      <footer class="board-footer"><span><i class="online-dot"></i> <span id="save-status">正在读取看板</span></span><span id="revision">revision 0</span><span>拖动把手整理 · 修改后与 Agent 共享</span></footer>
+      <footer class="board-footer"><span><i class="online-dot"></i> <span id="save-status">正在读取看板</span></span><span id="revision">revision 0</span><span>拖标题移动 · 空白拖动平移 · Ctrl＋滚轮缩放</span></footer>
     </main>
   </div>
   <aside id="inspector" class="inspector" aria-label="卡片属性" hidden></aside>

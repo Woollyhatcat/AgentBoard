@@ -13,7 +13,7 @@ const TYPES = {
   input: {label: "输入框", icon: "⌨", hint: "补充文字或精确数值"},
 };
 const DEFAULTS = {
-  text: {title: "任务说明", props: {format: "markdown"}, state: {text: ""}},
+  text: {title: "任务说明", props: {format: "markdown", font_size: 16}, state: {text: ""}},
   image: {title: "参考图片", props: {fit: "contain", alt: ""}, state: {asset_id: "", caption: ""}},
   file: {title: "参考文件", props: {preview: "auto"}, state: {asset_id: "", note: ""}},
   slider: {title: "共享参数", props: {min: 0, max: 10, step: 0.1, unit: "", precision: 2}, state: {value: 2.5}},
@@ -24,7 +24,14 @@ const app = {
   boardId: "board_local", session: null, cards: new Map(), assets: new Map(), info: null,
   revision: 0, connected: false, loaded: false, syncing: false, editor: null,
   pending: new Map(), inline: new Map(), selected: null, query: "", events: [], lastError: null, modalDirty: false,
+  typeDefs: new Map(), dragging: null, suppressClickUntil: 0,
 };
+const space = new FreeCanvas($(".canvas-wrapper"), $("#canvas"),
+  () => [...app.cards.values()].filter(card => card.lifecycle === "active"), () => app.selected);
+const updateButton = el("button", {class: "secondary", text: "查看 Agent 更新", hidden: true,
+  onClick: () => { if (app.lastUpdated) locate(app.lastUpdated); updateButton.hidden = true; }});
+$(".tools").prepend(updateButton);
+$(".tools").append(el("button", {class:"secondary", text:"显示风格", onClick:() => showModal("本机显示风格",space.preferences(),"APPEARANCE")}));
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -100,7 +107,7 @@ function setConnection(value) {
 
 function updateSaveStatus() {
   const dirty = app.editor?.dirty || app.inline.size || app.modalDirty;
-  const conflict = app.editor?.dirty && app.cards.get(app.editor.base.id)?.version !== app.editor.base.version;
+  const conflict = app.editor?.dirty && editorStale();
   const value = !app.connected ? "离线 · 已保存内容可能过时" : conflict ? "存在冲突 · 草稿已保留" : app.pending.size ? "操作结果确认中…" : app.lastError ? "保存失败 · 待处理" : dirty ? "有未保存的草稿" : "所有修改已保存";
   $("#save-status").textContent = value;
   $("#revision").textContent = "revision " + app.revision;
@@ -187,6 +194,8 @@ async function sync() {
     $("#trash-count").textContent = app.info.deleted_card_count;
     if (!app.loaded) {
       const snapshot = await allPages("get_board_snapshot", {view: "full"});
+      const definitions = await rpc("get_card_types");
+      app.typeDefs = new Map(definitions.types.map(item => [item.type, item]));
       app.cards = new Map(snapshot.items.map(card => [card.id, card]));
       app.revision = snapshot.revision;
       app.loaded = true;
@@ -203,7 +212,10 @@ async function sync() {
     for (const event of changes.items) {
       applyCard(event.card_after, true);
       app.events.push(event);
-      if (event.actor.kind === "agent") toast(`Agent ${event.kind === "created" ? "添加" : "更新"}了「${event.card_after.title}」`);
+      if (event.actor.kind === "agent") {
+        app.lastUpdated = event.card_id; updateButton.hidden = false;
+        toast(`Agent ${event.kind === "created" ? "添加" : "更新"}了「${event.card_after.title}」，可点击“查看 Agent 更新”定位。`);
+      }
     }
     app.events = app.events.slice(-50);
     app.revision = changes.to_revision;
@@ -236,8 +248,9 @@ function applyCard(card, external = false) {
   app.cards.set(card.id, card);
   // Only a fully consumed snapshot/change round advances the sync cursor.
   // A write receipt can be newer than unseen changes on other cards.
-  renderCard(card, external);
+  if (app.dragging !== card.id) renderCard(card, external);
   updateCounts();
+  space.layers();
   if (app.editor?.base.id === card.id) {
     if (app.editor.dirty) refreshConflict();
     else openEditor(card, true);
@@ -261,6 +274,8 @@ function renderGrid() {
   $("#canvas").replaceChildren();
   [...app.cards.values()].sort((a, b) => a.layout.y - b.layout.y || a.layout.x - b.layout.x || a.id.localeCompare(b.id)).forEach(card => renderCard(card));
   updateCounts();
+  space.layers(); space.initialFit();
+  if (app.query) space.fit([...app.cards.values()].filter(matches));
 }
 
 function cardElement(id) { return document.getElementById(id); }
@@ -284,24 +299,31 @@ function renderCard(card, flash = false) {
   const type = TYPES[card.type] || {label: card.type, icon: "◇"};
   const node = el("article", {id: card.id, class: "card" + (app.selected === card.id ? " selected" : "") + (flash ? " flash" : ""),
     tabIndex: 0, data: {type: card.type}, "aria-label": card.title + "，" + type.label,
-    onClick: event => { if (!event.target.closest("button,input,select,textarea,a,label")) selectCard(card.id); },
+    onClick: event => { if (Date.now() > app.suppressClickUntil && !event.target.closest("button,input,select,textarea,a,label")) selectCard(card.id); },
     onKeydown: event => { if (event.target === node && event.key === "Enter") { event.preventDefault(); selectCard(card.id); } },
   });
-  node.style.gridColumn = `${card.layout.x + 1} / span ${card.layout.w}`;
-  node.style.gridRow = `${card.layout.y + 1} / span ${card.layout.h}`;
+  Object.assign(node.style, {left: card.layout.x + "px", top: card.layout.y + "px", width: card.layout.w + "px",
+    height: card.layout.height_mode === "fixed" ? card.layout.h + "px" : "auto"});
+  node.dataset.heightMode = card.layout.height_mode;
   const handle = el("button", {class: "drag-handle", text: "⠿", title: "拖动卡片；键盘用户可在属性中修改布局", "aria-label": "拖动「" + card.title + "」", data: {editControl: "true"}});
   handle.addEventListener("pointerdown", event => startDrag(event, card, false));
-  node.append(el("header", {class: "card-head"}, handle, el("span", {class: "type-icon", text: type.icon}),
+  const head = el("header", {class: "card-head"}, handle, el("span", {class: "type-icon", text: type.icon}),
     el("h2", {title: card.title, text: card.title}), card.locked ? el("span", {class: "locked-label", text: "锁定"}) : null,
-    el("button", {class: "icon-button", text: "···", "aria-label": "「" + card.title + "」卡片菜单", onClick: () => cardMenu(card.id)})));
+    el("button", {class: "icon-button", text: "···", "aria-label": "「" + card.title + "」卡片菜单", onClick: () => cardMenu(card.id)}));
+  head.addEventListener("pointerdown", event => {
+    if (!event.target.closest("button") || event.target.closest(".drag-handle")) startDrag(event, card, false);
+  });
+  node.append(head);
   const body = el("div", {class: "card-body"});
   renderContent(body, card);
+  if (card.type === "text") body.style.fontSize = card.props.font_size + "px";
   node.append(body, el("footer", {class: "card-foot"}, el("span", {text: `${type.label} · ${card.updated_by.display_name} · ${date(card.updated_at)}`, title: card.id + " · v" + card.version}), el("span", {class: "card-status", text: "已保存"})));
   const resize = el("button", {class: "resize-handle", "aria-label": "调整「" + card.title + "」尺寸", title: "调整尺寸", data: {editControl: "true"}});
   resize.addEventListener("pointerdown", event => startDrag(event, card, true));
   node.append(resize);
   if (old) old.replaceWith(node); else $("#canvas").append(node);
   updateCardDisabled(card);
+  space.layers();
   if (focusKey) {
     const replacement = $$('[data-focus-key]', node).find(control => control.dataset.focusKey === focusKey);
     replacement?.focus({preventScroll: true});
@@ -309,46 +331,7 @@ function renderCard(card, flash = false) {
   }
 }
 
-// Markdown is constructed with DOM nodes only. Embedded HTML remains visible text.
-function markdown(text) {
-  const root = el("div", {class: "markdown"});
-  let inCode = false, code = [], list = null;
-  const inline = (container, line) => {
-    const regex = /(\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^\s)]+)\))/g;
-    let match, start = 0;
-    while ((match = regex.exec(line))) {
-      container.append(line.slice(start, match.index));
-      if (match[2]) container.append(el("strong", {text: match[2]}));
-      else if (match[3]) container.append(el("code", {text: match[3]}));
-      else {
-        try {
-          const url = new URL(match[5]);
-          if (["https:", "http:"].includes(url.protocol)) container.append(el("a", {href: url.href, target: "_blank", rel: "noopener noreferrer", text: match[4]}));
-          else container.append(match[0]);
-        } catch { container.append(match[0]); }
-      }
-      start = regex.lastIndex;
-    }
-    container.append(line.slice(start));
-  };
-  for (const line of text.split("\n")) {
-    if (line.startsWith("```")) {
-      if (inCode) { root.append(el("pre", {}, el("code", {text: code.join("\n")}))); code = []; }
-      inCode = !inCode; list = null; continue;
-    }
-    if (inCode) { code.push(line); continue; }
-    if (/^[-*] /.test(line)) {
-      if (!list) { list = el("ul"); root.append(list); }
-      const item = el("li"); inline(item, line.slice(2)); list.append(item);
-    } else {
-      list = null;
-      const heading = line.match(/^#{1,6} (.*)/);
-      const item = el(heading ? "h3" : "p"); inline(item, heading ? heading[1] : line || "\u00a0"); root.append(item);
-    }
-  }
-  if (code.length) root.append(el("pre", {}, el("code", {text: code.join("\n")})));
-  return root;
-}
+function markdown(text) { return BoardText.render(text); }
 
 function renderContent(body, card) {
   const p = card.props, s = card.state, draft = app.inline.get(card.id);
@@ -361,7 +344,7 @@ function renderContent(body, card) {
       "aria-label": card.title, data: {editControl: "true", focusKey: "range"}});
     const remember = () => {
       const previous = app.inline.get(card.id);
-      app.inline.set(card.id, {value: Number(slider.value), version: previous?.version ?? card.version, error: null});
+      app.inline.set(card.id, {value: Number(slider.value), version: previous?.version ?? card.content_version, error: null});
       display.textContent = slider.value; updateSaveStatus();
     };
     slider.addEventListener("input", remember);
@@ -377,7 +360,7 @@ function renderContent(body, card) {
   } else if (card.type === "checkbox") {
     const control = el("input", {type: "checkbox", checked: draft ? draft.value : s.checked,
       data: {editControl: "true", focusKey: "checkbox"}, onChange: event => {
-        app.inline.set(card.id, {value: event.target.checked, version: card.version}); commitInline(card.id);
+        app.inline.set(card.id, {value: event.target.checked, version: card.content_version}); commitInline(card.id);
       }});
     body.append(el("label", {class: "check-label"}, control, p.label));
   } else if (card.type === "input") {
@@ -410,7 +393,7 @@ function bindInlineInput(control, card, numeric) {
   control.addEventListener("input", () => {
     const old = app.inline.get(card.id);
     app.inline.set(card.id, {raw: control.value, value: numeric ? (control.value === "" ? null : Number(control.value)) : control.value,
-      version: old?.version ?? card.version, error: null});
+      version: old?.version ?? card.content_version, error: null});
     updateSaveStatus();
   });
   control.addEventListener("keydown", event => {
@@ -426,13 +409,13 @@ async function commitInline(id) {
   const key = card.type === "checkbox" ? "checked" : "value";
   let value = draft.value;
   if (card.type === "input" && card.props.mode === "text" && value === "") value = null;
-  if (equal(value, card.state[key]) && draft.version === card.version) {
+  if (equal(value, card.state[key]) && draft.version === card.content_version) {
     app.inline.delete(id); updateSaveStatus(); return;
   }
   try {
     if (typeof value === "number" && !Number.isFinite(value)) throw new Error("请输入有效数值。");
     if (card.type === "slider" && value === null) throw new Error("滑条数值不能为空。");
-    await mutate("edit_card", {card_id: id, expected_version: draft.version, changes: {state: {[key]: value}}}, {cardId: id,
+    await mutate("edit_card", {card_id: id, expected_content_version: draft.version, changes: {state: {[key]: value}}}, {cardId: id,
       onSuccess: () => { app.inline.delete(id); renderCard(app.cards.get(id)); }});
   } catch (error) {
     draft.error = error.message;
@@ -474,6 +457,8 @@ function field(label, path, value, options = {}) {
   else if (options.multiline) input = el("textarea", {...attrs, class: options.tall ? "tall" : "", value: value ?? "", rows: options.tall ? 7 : 3});
   else input = el("input", {...attrs, type: options.kind === "number" ? "number" : "text", step: "any", value: value ?? ""});
   const node = el("label", {class: "field"}, label, input);
+  if (options.min !== undefined) input.min = options.min;
+  if (options.max !== undefined) input.max = options.max;
   if (options.hint) node.append(el("small", {text: options.hint}));
   return node;
 }
@@ -482,7 +467,22 @@ function cardFields(card, editing = false) {
   const root = el("div");
   const p = card.props, s = card.state, type = card.type;
   root.append(el("span", {class: "section-label", text: "内容 / CONTENT"}), field("标题", "title", card.title), field("描述与用途", "description", card.description || "", {multiline: true}));
-  if (type === "text") root.append(field("完整正文", "state.text", s.text, {multiline: true, tall: true}), field("正文格式", "props.format", p.format, {choices: [["markdown", "Markdown（安全子集）"], ["plain", "纯文本"]]}));
+  if (type === "text") {
+    root.append(field("完整正文（Markdown / LaTeX 源码）", "state.text", s.text, {multiline: true, tall: true}),
+      el("div", {class: "field-grid"},
+        field("正文基准字号", "props.font_size", p.font_size ?? 16, {kind: "number", min: 12, max: 48}),
+        field("正文格式", "props.format", p.format, {choices: [["markdown", "Markdown + LaTeX"], ["plain", "纯文本"]]})));
+    const preview = el("div", {class: "live-preview", "aria-label": "正文实时预览"});
+    root.append(el("span", {class: "section-label", text: "实时预览 / PREVIEW"}), preview);
+    const paintPreview = () => {
+      const value = $('[name="state.text"]', root).value, format = $('[name="props.format"]', root).value;
+      preview.style.fontSize = Math.max(12, Math.min(48, Number($('[name="props.font_size"]', root).value) || 16)) + "px";
+      preview.replaceChildren(BoardText.render(value, format));
+    };
+    let previewTimer;
+    root.addEventListener("input", () => { clearTimeout(previewTimer); previewTimer = setTimeout(paintPreview, 120); });
+    root.addEventListener("change", paintPreview); paintPreview();
+  }
   if (["image", "file"].includes(type)) {
     const assets = [...app.assets.values()].filter(asset => type !== "image" || asset.preview_kind === "image");
     const choices = [["", "请选择已添加的资源"], ...assets.map(asset => [asset.id, `${asset.name} · ${asset.mode === "reference" ? "引用" : "副本"}`])];
@@ -505,7 +505,15 @@ function cardFields(card, editing = false) {
     if (p.mode === "text") root.append(field("最长文字（1–2000）", "props.max_length", p.max_length, {kind: "number"}));
     else root.append(el("div", {class: "field-grid"}, field("最小值（可空）", "props.min", p.min, {kind: "number"}), field("最大值（可空）", "props.max", p.max, {kind: "number"}), field("显示精度（0–6）", "props.precision", p.precision, {kind: "number"}), field("单位", "props.unit", p.unit)));
   }
-  if (editing) root.append(el("span", {class: "section-label", text: "共享布局 / LAYOUT"}), el("div", {class: "field-grid"}, ...["x", "y", "w", "h"].map(key => field({x: "横坐标 x", y: "纵坐标 y", w: "宽度 w", h: "高度 h"}[key], "layout." + key, card.layout[key], {kind: "number"}))), el("p", {class: "dialog-description", text: "12 列网格；布局不可与其他活动卡片重叠。窄屏展示不会改变这些坐标。"}));
+  if (editing) {
+    root.append(el("span", {class: "section-label", text: "共享布局 / WORLD"}),
+      el("div", {class: "field-grid"}, ...["x", "y", "w", "h", "z"].map(key => field(
+        {x: "横坐标 x", y: "纵坐标 y", w: "宽度", h: "固定／估计高度", z: "共享层级"}[key],
+        "layout." + key, card.layout[key], {kind: "number"}))));
+    if (type === "text") root.append(field("正文高度模式", "layout.height_mode", card.layout.height_mode,
+      {choices: [["auto", "内容自适应（长文限高）"], ["expanded", "完整展开正文"], ["fixed", "固定高度，内部滚动"]]}));
+    root.append(el("p", {class: "dialog-description", text: "100% 时按画布像素计量，可为负坐标、允许重叠。自动高度不推挤其他卡片。"}));
+  }
   return root;
 }
 
@@ -531,7 +539,7 @@ function diffCard(base, next) {
     if (["props", "state", "layout"].includes(key)) {
       const patch = {};
       for (const [name, value] of Object.entries(next[key] || {})) if (!equal(base[key]?.[name], value)) patch[name] = value;
-      if (Object.keys(patch).length) changes[key] = patch;
+      if (Object.keys(patch).length) changes[key] = key === "layout" ? {space:"world", ...patch} : patch;
     } else if (base[key] !== next[key]) changes[key] = next[key];
   }
   return changes;
@@ -569,6 +577,7 @@ async function createCardForm(type, initial = null) {
     pending = true; submit.disabled = true; errorBox.textContent = "";
     try {
       const next = collectFields(form, card);
+      next.layout = space.placement(type, app.typeDefs.get(type)?.default_layout || {w:432,h:336});
       await mutate("push_card", {card: next}, {onSuccess: data => {
         dirty = false; app.modalDirty = false; modalOnClose = null; $("#modal").close(); locate(data.card.id); toast("卡片已创建，与 Agent 共享。");
       }});
@@ -611,7 +620,7 @@ async function selectCard(id, withInline = false) {
     const card = app.cards.get(id); if (!card) return;
     const draft = app.inline.get(id);
     if (draft && !withInline && !confirm("此卡片有内联草稿。将保留草稿并转到属性面板审阅？")) return;
-    app.selected = id;
+    app.selected = id; space.layers();
     $$(".card.selected").forEach(node => node.classList.remove("selected")); cardElement(id)?.classList.add("selected");
     openEditor(card);
     if (draft) {
@@ -619,7 +628,7 @@ async function selectCard(id, withInline = false) {
       const input = $(`[name="${key}"]`, $("#inspector"));
       if (input) { if (input.type === "checkbox") input.checked = draft.value; else input.value = draft.raw ?? draft.value ?? ""; }
       app.editor.dirty = true;
-      app.editor.base.version = draft.version;
+      app.editor.base.content_version = draft.version;
       app.inline.delete(id);
       refreshConflict(); updateCardDisabled(card);
     }
@@ -655,14 +664,31 @@ function closeEditor() {
   const id = app.editor?.base.id;
   app.editor = null; app.selected = null; app.lastError = null; $("#inspector").hidden = true;
   if (id) { cardElement(id)?.classList.remove("selected"); updateCardDisabled(app.cards.get(id)); }
+  space.layers();
   updateSaveStatus();
+}
+
+function editExpectations(base, changes) {
+  return {...(Object.keys(changes).some(key => key !== "layout") ? {expected_content_version: base.content_version} : {}),
+    ...(changes.layout ? {expected_layout_version: base.layout_version} : {})};
+}
+
+function editorStale() {
+  if (!app.editor) return false;
+  const base = app.editor.base, current = app.cards.get(base.id);
+  if (!current) return true;
+  try {
+    const patch = diffCard(base, collectFields($("#edit-form"), base));
+    return (Object.keys(patch).some(key => key !== "layout") && current.content_version !== base.content_version) ||
+      (!!patch.layout && current.layout_version !== base.layout_version);
+  } catch { return false; }
 }
 
 function refreshConflict() {
   if (!app.editor) return;
   const base = app.editor.base, current = app.cards.get(base.id);
   const banner = $("#conflict"); if (!banner || !current) return;
-  const stale = current.version !== base.version;
+  const stale = editorStale();
   const stop = current.locked || current.lifecycle === "deleted";
   banner.hidden = !stale && !stop;
   $("#save-editor").disabled = stale || stop || cardBusy(base.id) || !app.connected;
@@ -686,11 +712,11 @@ async function saveEditor() {
   const editor = app.editor, base = editor.base;
   try {
     const latest = app.cards.get(base.id);
-    if (latest.version !== base.version || latest.locked || latest.lifecycle === "deleted") { refreshConflict(); return false; }
+    if (editorStale() || latest.locked || latest.lifecycle === "deleted") { refreshConflict(); return false; }
     const changes = diffCard(base, collectFields($("#edit-form"), base));
     if (!Object.keys(changes).length) { editor.dirty = false; updateCardDisabled(latest); updateSaveStatus(); return true; }
     $("#save-editor").disabled = true;
-    await mutate("edit_card", {card_id: base.id, expected_version: base.version, changes}, {cardId: base.id,
+    await mutate("edit_card", {card_id: base.id, ...editExpectations(base, changes), changes}, {cardId: base.id,
       onSuccess: data => { if (app.editor?.base.id === base.id) openEditor(data.card); updateCardDisabled(data.card); toast("修改已保存。"); }});
     return true;
   } catch (error) {
@@ -713,8 +739,17 @@ function locate(id) {
   if (!card) { toast("找不到此卡片。", true); return; }
   if (card.lifecycle === "deleted") { trashDialog(id); return; }
   app.query = ""; $("#search").value = ""; renderGrid();
-  cardElement(id)?.scrollIntoView({behavior: "smooth", block: "center"});
+  space.focus(card);
   cardElement(id)?.classList.add("flash"); selectCard(id);
+}
+
+async function changeLayout(id, patch) {
+  const card = app.cards.get(id);
+  try {
+    await mutate("edit_card", {card_id:id, expected_layout_version:card.layout_version,
+      changes:{layout:{space:"world",...patch}}}, {cardId:id});
+    closeModal(); toast("布局已保存。");
+  } catch(error) { toast(error.message,true); }
 }
 
 function cardMenu(id) {
@@ -725,6 +760,13 @@ function cardMenu(id) {
     ["编辑卡片", () => { closeModal(); selectCard(id); }, card.locked],
     ["复制卡片标识", () => copy(id), false],
     ["定位卡片", () => { closeModal(); locate(id); }, false],
+    ["置于最上层", () => changeLayout(id, {z: Math.max(0, ...space.getCards().map(item => item.layout.z || 0)) + 1}), blocked(card)],
+    ["置于最下层", () => changeLayout(id, {z: Math.min(0, ...space.getCards().map(item => item.layout.z || 0)) - 1}), blocked(card)],
+    ...(card.type === "text" ? [
+      ["正文按内容自适应", () => changeLayout(id, {height_mode: "auto"}), blocked(card)],
+      ["完整展开正文", () => changeLayout(id, {height_mode: "expanded"}), blocked(card)],
+      ["固定当前高度", () => changeLayout(id, {height_mode: "fixed", h: cardElement(id).offsetHeight}), blocked(card)],
+    ] : []),
     [card.locked ? "显式解锁卡片" : "锁定卡片", () => guardEditor(async () => {
       try { await mutate("set_card_lock", {card_id: id, expected_version: card.version, locked: !card.locked}, {cardId: id}); closeModal(); toast(card.locked ? "卡片已解锁。" : "卡片已锁定，双方仍可读取。"); }
       catch (error) { toast(error.message, true); }
@@ -915,7 +957,7 @@ async function settingsDialog() {
     catch (error) { errorBox.textContent = error.message; }
     finally { submit.disabled = false; }
   });
-  const root = el("div", {}, form, el("span", {class: "section-label", text: "已授权资源目录"}), rootList, rootForm);
+  const root = el("div", {}, space.preferences(), form, el("span", {class: "section-label", text: "已授权资源目录"}), rootList, rootForm);
   showModal("看板设置", root, "BOARD SETTINGS"); await loadRoots();
 }
 
@@ -927,33 +969,47 @@ function connectionDialog() {
 }
 
 function startDrag(event, card, resizing) {
-  if (event.button !== 0 || blocked(card) || app.inline.has(card.id) || matchMedia("(max-width: 800px)").matches || app.query) return;
+  if (event.button !== 0 || blocked(card) || app.inline.has(card.id) || app.dragging) return;
   event.preventDefault(); event.stopPropagation();
-  const handle = event.currentTarget, canvas = $("#canvas"), original = clone(card.layout);
-  const computed = getComputedStyle(canvas), gap = parseFloat(computed.gap), row = parseFloat(computed.gridAutoRows), width = (canvas.clientWidth - gap * 11 - 4) / 12;
-  const x0 = event.clientX, y0 = event.clientY;
-  const preview = el("div", {class: "drag-preview"}); $(".canvas-wrapper").append(preview);
-  let layout = original;
-  const paint = () => {
-    Object.assign(preview.style, {left: (layout.x * (width + gap) + 2) + "px", top: (layout.y * (row + gap) + 2) + "px", width: (layout.w * width + (layout.w - 1) * gap) + "px", height: (layout.h * row + (layout.h - 1) * gap) + "px"});
-    preview.classList.toggle("invalid", [...app.cards.values()].some(other => other.id !== card.id && other.lifecycle === "active" && rectanglesOverlap(layout, other.layout)));
-  };
-  paint(); handle.setPointerCapture(event.pointerId);
+  const handle = event.currentTarget, node = cardElement(card.id), original = clone(card.layout);
+  const x0 = event.clientX, y0 = event.clientY, zoom = space.camera.zoom, initialHeight = node.offsetHeight;
+  app.dragging = card.id; document.body.classList.add("card-dragging");
+  handle.setPointerCapture(event.pointerId);
+  let layout = original, moved = false;
+  const snap = value => Math.round(value / (space.prefs.snap ? 24 : 1)) * (space.prefs.snap ? 24 : 1);
   const move = next => {
-    const dx = Math.round((next.clientX - x0) / (width + gap)), dy = Math.round((next.clientY - y0) / (row + gap));
-    layout = resizing ? {...original, w: Math.max(["text", "image", "file"].includes(card.type) ? 3 : 2, Math.min(12 - original.x, original.w + dx)), h: Math.max(2, Math.min(24, original.h + dy))} : {...original, x: Math.max(0, Math.min(12 - original.w, original.x + dx)), y: Math.max(0, original.y + dy)};
-    paint();
+    const dx = (next.clientX - x0) / zoom, dy = (next.clientY - y0) / zoom;
+    if (Math.abs(next.clientX - x0) + Math.abs(next.clientY - y0) < 3 && !moved) return;
+    moved = true;
+    layout = resizing ? {...original, w: Math.max(180, Math.min(10000, snap(original.w + dx))),
+      h: Math.max(100, Math.min(20000, snap(initialHeight + dy))), height_mode:"fixed"} :
+      {...original, x: Math.max(-10000000, Math.min(10000000, snap(original.x + dx))),
+       y: Math.max(-10000000, Math.min(10000000, snap(original.y + dy)))};
+    Object.assign(node.style, {left:layout.x+"px", top:layout.y+"px", width:layout.w+"px",
+      height:layout.height_mode === "fixed" ? layout.h+"px" : "auto"});
+    node.dataset.heightMode = layout.height_mode;
+    node.classList.add("moving");
   };
-  const clean = () => { handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", end); handle.removeEventListener("pointercancel", cancel); preview.remove(); };
+  const clean = () => {
+    app.dragging = null; document.body.classList.remove("card-dragging");
+    handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", end);
+    handle.removeEventListener("pointercancel", cancel); document.removeEventListener("keydown", escape);
+    const latest = app.cards.get(card.id);
+    if (latest && (moved || latest !== card)) renderCard(latest);
+    if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+    if (moved) app.suppressClickUntil = Date.now()+150;
+  };
   const end = async () => {
-    clean(); if (equal(layout, original)) return;
-    try { await mutate("edit_card", {card_id: card.id, expected_version: card.version, changes: {layout}}, {cardId: card.id}); }
-    catch (error) { toast(error.message + " 布局保持最后已保存位置。", true); }
+    clean(); if (!moved || equal(layout, original)) return;
+    try { await mutate("edit_card", {card_id:card.id, expected_layout_version:card.layout_version,
+      changes:{layout}}, {cardId:card.id}); }
+    catch (error) { toast(error.message+" 布局保留最后已保存位置。",true); }
   };
   const cancel = () => clean();
-  handle.addEventListener("pointermove", move); handle.addEventListener("pointerup", end); handle.addEventListener("pointercancel", cancel);
+  const escape = key => { if (key.key === "Escape") { key.preventDefault(); cancel(); } };
+  handle.addEventListener("pointermove",move); handle.addEventListener("pointerup",end);
+  handle.addEventListener("pointercancel",cancel); document.addEventListener("keydown",escape);
 }
-function rectanglesOverlap(a, b) { return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h; }
 
 async function examples() {
   const button = $("#example-btn"); button.disabled = true;

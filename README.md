@@ -1,10 +1,10 @@
 # AgentBoard
 
-人与 Agent 共用的本地持久化黑板。依据 `doc/functional-specification.html` 和 `doc/detailed-functional-specification.html` 开发，详细规格 v0.2 为字段与行为基线。
+人与 Agent 共用的本地持久化黑板。依据 `doc/functional-specification.html` 和 `doc/detailed-functional-specification.html` 开发，当前自由画布、富文本与并行编辑以 [v0.3 补充规格](doc/free-canvas-specification.md) 为准。
 
 ## 启动
 
-需要 Python 3.11 或以上，无第三方运行依赖。在项目目录执行：
+需要 Python 3.11 或以上；服务端仅使用标准库，前端渲染库已随项目打包。在项目目录执行：
 
 ```powershell
 python -m agentboard serve
@@ -71,7 +71,7 @@ MCP 默认自动启动网页，使用 `--port` 可指定网页端口。仅需数
 }
 ```
 
-编辑、删除与恢复需带卡片当前 `expected_version`。每个新写入意图使用新的 `command_id`；网络结果未知时通过 `get_operation_status` 查询，或用**原命令和完全相同的输入**重试。已确定的成功与业务失败均保存回执，不自动清理。
+编辑内容传 `expected_content_version`，编辑布局传 `expected_layout_version`，同时修改则同时传两个版本；也可用 `expected_version` 作整卡检查。删除与恢复仍需当前 `expected_version`。每个新写入意图使用新的 `command_id`；网络结果未知时通过 `get_operation_status` 查询，或用**原命令和完全相同的输入**重试。已确定的成功与业务失败均保存回执，不自动清理。
 
 完整工具：`list_boards`、`get_board_info`、`get_card_types`、`get_card_list`、`read_card`、`get_board_snapshot`、`get_changes`、`push_card`、`edit_card`、`delete_card`、`restore_card`、`get_asset_sources`、`import_asset`、`get_asset_info`、`read_asset`、`get_operation_status`。目录包含 JSON Schema 输入、输出与中文用途说明。
 
@@ -79,12 +79,15 @@ MCP 默认自动启动网页，使用 `--port` 可指定网页端口。仅需数
 
 协议适配依据 MCP 官方 [生命周期](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle)、[stdio 传输](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)和 [Tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools) 规范，实现初始化、工具发现、结构化回执和协议／业务错误分离。当前以 `2025-11-25` 为默认协议版本，并支持 `2025-06-18`、`2025-03-26`、`2024-11-05` 协商；规格中提及的其他协议日期未作为本实现兼容承诺。
 
-## 首版功能
+## 当前功能
 
-- 文本（安全 Markdown 子集）、图片、文件、滑条、勾选框、文本／数值输入。
-- 12 列网格，自动放置、把手拖动、边角缩放和键盘可用的布局表单；窄屏单列不改变共享坐标。
+- 文本（Markdown 表格、嵌套列表、任务列表、代码块与 LaTeX）、图片、文件、滑条、勾选框、文本／数值输入。
+- 文本源码编辑与实时预览；共享字号 12～48（默认 16），MCP 可通过 `props.font_size` 创建／修改。自动高度、完整展开与手动固定高度。
+- 桌面自由画布：拖标题移动、右下角调整尺寸、允许重叠与负坐标；空白／空格拖动／中键平移，滚轮平移，Ctrl＋滚轮按指针缩放 10%～400%。
+- 查看全部、原点、选中定位、共享置顶／置底和可选网格吸附。相机保存在本机，Agent 更新不改变用户视角。
+- 本机明暗主题、主题色、背景、网格与紧凑模式。
 - 标题与完整标识搜索、属性面板、修改来源、最近 50 次变更。
-- 整卡版本冲突检测、局部合并、原子保存、无变化不升版本、持久幂等回执。
+- 内容／布局分别检查并发版本，支持同时挪卡与改正文；局部合并、原子保存、无变化不升版本、持久幂等回执。
 - 用户锁定／显式解锁、软删除与恢复、位置被占用时自动重排恢复卡片。
 - 不可变导入副本、已授权目录内受控引用、资源刷新、撤权、图片与 UTF-8 文本预览、文件下载。
 - 固定时点快照／列表分页、按 revision 增量分页、10 分钟续读期限、资源版本绑定分片读取。
@@ -103,6 +106,8 @@ MCP 默认自动启动网页，使用 `--port` 可指定网页端口。仅需数
 ```powershell
 python -m unittest discover -v
 node --check agentboard/web/app.js
+node --check agentboard/web/canvas.js
+node --check agentboard/web/render.js
 ```
 
 Python 测试使用临时 SQLite 数据目录，覆盖版本冲突、同时写入、幂等重放、生命周期、跨页一致性、资源撤权与分片、正常重启、HTTP 来源校验、MCP 协议及真实 stdio 子进程。Node 仅用于开发时语法检查，运行产品不需要 Node。
@@ -111,7 +116,11 @@ Python 测试使用临时 SQLite 数据目录，覆盖版本冲突、同时写�
 
 人工页面验收记录与规格映射见 [doc/implementation-status.md](doc/implementation-status.md)。
 
+Markdown、公式和清洗库随项目本地提供，无需运行时 CDN；版本、来源和完整性记录见 `agentboard/web/vendor/manifest.json`，许可证保留在对应子目录。
+
 ## 数据与版本管理
+
+首次加载旧版数据库时自动升级到 schema 2.0，并通过 SQLite 备份 API 保存完整旧库到 `data/backups/before-world-*.sqlite3`。卡片标识、正文和资源保持；旧网格坐标转换到世界坐标。迁移前的增量游标需要重新快照；旧进程的网格写入被拒绝，请重新连接 MCP 加载新契约。
 
 SQLite 数据库为 `data/agentboard.sqlite3`，启用 WAL 与同步事务。资源副本也存放在数据库中。停止所有 HTTP／MCP 进程后，可复制整个数据目录作为备份；运行中不要只复制单个 `.sqlite3` 文件。删除卡片不会清理资源。当前保留所有卡片变更与回执，满足至少 30 天变化读取，但长期运行会增加数据库体积。
 

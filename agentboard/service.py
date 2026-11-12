@@ -19,6 +19,7 @@ import time
 
 from .schema import (BusinessError, INPUTS, USER_INPUTS, WRITES, TYPES, card_types,
                      normalize_card, validate, COMMAND, fail)
+from .migration import LAYOUT_POLICY, migrate, install_write_guard
 
 USER = {"id": "local_user", "kind": "user", "display_name": "本地用户"}
 AGENT = {"id": "local_agent", "kind": "agent", "display_name": "Agent"}
@@ -71,11 +72,13 @@ class BoardService:
                     id TEXT PRIMARY KEY, actor TEXT NOT NULL, tool TEXT NOT NULL,
                     signature TEXT NOT NULL, expires REAL NOT NULL, body TEXT NOT NULL);
             """)
+            db.execute("BEGIN IMMEDIATE")
             board = {"id": "board_local", "name": "我的工作黑板", "description": "人与 Agent，一起接着做。",
-                     "revision": 0, "schema_version": "1.0",
-                     "layout_policy": {"columns": 12, "collision": "reject"},
+                     "revision": 0, "schema_version": "2.0", "layout_policy": LAYOUT_POLICY,
                      "agent_permissions": PERMISSIONS}
             db.execute("INSERT OR IGNORE INTO board VALUES (?,?)", (board["id"], dump(board)))
+            migrate(db, self.database)
+            install_write_guard(db)
 
     def connect(self):
         db = sqlite3.connect(self.database, timeout=15)
@@ -125,6 +128,8 @@ class BoardService:
             # The transaction also freezes the read point for multi-query reads.
             db.execute("BEGIN IMMEDIATE")
             board = self._board(db)
+            if board["schema_version"] != "2.0":
+                raise BusinessError("UNSUPPORTED_SCHEMA", "看板契约已改变，请重新连接 MCP 并刷新网页。")
             meta["board_revision"] = board["revision"]
             if tool not in INPUTS and tool not in USER_INPUTS:
                 raise BusinessError("INVALID_ARGUMENT", "未知操作。")
@@ -229,6 +234,9 @@ class BoardService:
                 return self._page(db, actor, tool, a)
             if a["since_revision"] > board["revision"]:
                 raise BusinessError("INVALID_ARGUMENT", "起始版本不能大于当前版本。")
+            if a["since_revision"] < board.get("migration_revision", 0):
+                raise BusinessError("SNAPSHOT_REQUIRED", "看板已升级为自由画布，请重新获取完整快照。",
+                                    details={"earliest_available_revision": board["migration_revision"]})
             earliest = db.execute("SELECT MIN(revision) FROM events").fetchone()[0]
             if a["since_revision"] < (earliest - 1 if earliest else board["revision"]):
                 raise BusinessError("SNAPSHOT_REQUIRED", "该区间的变化记录已不可用，请重新获取快照。",
@@ -239,14 +247,17 @@ class BoardService:
             return self._page(db, actor, tool, a, events,
                               {"from_revision": a["since_revision"], "to_revision": board["revision"]})
         if tool == "push_card":
+            if "layout" in a["card"] and a["card"]["layout"].get("space") != "world":
+                raise BusinessError("UNSUPPORTED_SCHEMA", "旧网格布局不可写入，请查询 world 坐标契约。")
             card = normalize_card(a["card"], creating=True)
             self._check_asset_link(db, board, card)
             if "layout" not in card:
-                card["layout"] = self._place(db, TYPES[card["type"]]["default_layout"])
-            self._check_layout(db, card)
+                card["layout"] = self._place(db, TYPES[card["type"]]["default_layout"],
+                                             a.get("anchor_card_id"), kind=card["type"])
             card.update(id=uid("card"), board_id=board["id"], locked=False, lifecycle="active",
-                        version=0, created_at=now(), created_by=actor, deleted_at=None, deleted_by=None)
-            self._commit_card(db, board, actor, card, "created")
+                        version=0, content_version=0, layout_version=0,
+                        created_at=now(), created_by=actor, deleted_at=None, deleted_by=None)
+            self._commit_card(db, board, actor, card, "created", content_changed=True, layout_changed=True)
             return {"card": card, "changed": True,
                     "placement": "requested" if "layout" in a["card"] else "automatic"}
         if tool in ("edit_card", "delete_card", "restore_card", "set_card_lock"):
@@ -255,11 +266,17 @@ class BoardService:
                 raise BusinessError("CARD_DELETED", "此卡片已删除，请先恢复。")
             if card["locked"] and tool != "set_card_lock":
                 raise BusinessError("CARD_LOCKED", "此卡片已锁定，请由用户显式解锁。")
-            if a["expected_version"] != card["version"]:
-                raise BusinessError("VERSION_CONFLICT", "卡片已更新，本次修改未保存。",
-                                    details={"card_id": card["id"], "expected_version": a["expected_version"],
-                                             "current_version": card["version"]},
-                                    recovery="重新读取卡片，审阅最新内容后使用新命令提交。")
+            if tool == "edit_card":
+                if "layout" in a["changes"] and a["changes"]["layout"].get("space") != "world":
+                    raise BusinessError("UNSUPPORTED_SCHEMA", "布局修改须明确 space=world，请查询最新契约。")
+                parts = []
+                if set(a["changes"]) - {"layout"}:
+                    parts.append("content")
+                if "layout" in a["changes"]:
+                    parts.append("layout")
+                self._check_version(card, a, parts)
+            else:
+                self._check_version(card, a)
             original = deepcopy(card)
             adjusted = False
             if tool == "edit_card":
@@ -272,7 +289,6 @@ class BoardService:
                 card = normalize_card(card)
                 if card["type"] in ("image", "file") and card["state"]["asset_id"] != original["state"]["asset_id"]:
                     self._check_asset_link(db, board, card)
-                self._check_layout(db, card)
                 kind = "updated"
             elif tool == "delete_card":
                 if card["lifecycle"] == "active":
@@ -281,7 +297,8 @@ class BoardService:
             elif tool == "restore_card":
                 if card["lifecycle"] == "deleted":
                     if self._collisions(db, card["layout"], card["id"]):
-                        card["layout"] = self._place(db, card["layout"])
+                        card["layout"] = self._place(db, card["layout"], origin=card["layout"],
+                                                     kind=card["type"], excluding=card["id"])
                         adjusted = True
                     card.update(lifecycle="active", deleted_at=None, deleted_by=None)
                 kind = "restored"
@@ -290,7 +307,12 @@ class BoardService:
                 kind = "locked" if a["locked"] else "unlocked"
             changed = card != original
             if changed:
-                self._commit_card(db, board, actor, card, kind)
+                content_changed = any(card[k] != original[k] for k in
+                                      ("title", "description", "props", "state", "locked", "lifecycle"))
+                layout_changed = (card["layout"] != original["layout"] or
+                                  card["locked"] != original["locked"] or
+                                  card["lifecycle"] != original["lifecycle"])
+                self._commit_card(db, board, actor, card, kind, content_changed, layout_changed)
             result = {"card": card, "changed": changed}
             if tool == "restore_card":
                 result["layout_adjusted"] = adjusted
@@ -353,10 +375,33 @@ class BoardService:
             raise BusinessError("NOT_FOUND", "找不到此卡片。")
         return json.loads(row[0])
 
-    def _commit_card(self, db, board, actor, card, kind):
+    @staticmethod
+    def _check_version(card, args, parts=None):
+        if "expected_version" in args:
+            checks = [("version", args["expected_version"])]
+        elif parts:
+            checks = []
+            for part in parts:
+                key = "expected_" + part + "_version"
+                if key not in args:
+                    fail("缺少所修改分区的版本；也可以传 expected_version。", key, "INVALID_ARGUMENT")
+                checks.append((part + "_version", args[key]))
+        else:
+            fail("此操作需要 expected_version。", "expected_version", "INVALID_ARGUMENT")
+        for key, expected in checks:
+            if expected != card[key]:
+                raise BusinessError("VERSION_CONFLICT", "目标内容或布局已更新，本次修改未保存。",
+                                    details={"card_id": card["id"], "partition": key,
+                                             "expected_version": expected, "current_version": card[key],
+                                             "card_version": card["version"]},
+                                    recovery="重新读取卡片并审阅发生冲突的内容或布局，使用新命令提交。")
+
+    def _commit_card(self, db, board, actor, card, kind, content_changed=True, layout_changed=False):
         board["revision"] += 1
         card.update(version=card["version"] + 1, last_revision=board["revision"],
                     updated_at=now(), updated_by=actor)
+        card["content_version"] += int(content_changed)
+        card["layout_version"] += int(layout_changed)
         db.execute("INSERT OR REPLACE INTO cards VALUES (?,?)", (card["id"], dump(card)))
         event = {"revision": board["revision"], "event_id": uid("evt"), "kind": kind,
                  "card_id": card["id"], "card_version": card["version"], "actor": actor,
@@ -368,24 +413,29 @@ class BoardService:
         return [c for c in self._cards(db) if c["lifecycle"] == "active" and
                 c["id"] != excluding and overlaps(layout, c["layout"])]
 
-    def _check_layout(self, db, card):
-        if self._collisions(db, card["layout"], card.get("id")):
-            raise BusinessError("LAYOUT_CONFLICT", "该位置与活动卡片重叠，请调整布局。")
-
-    def _place(self, db, size):
-        cards = [c for c in self._cards(db) if c["lifecycle"] == "active"]
-        # Only rectangle edges can change whether the next row has free space.
-        rows = sorted({0} | {c["layout"]["y"] + c["layout"]["h"] for c in cards})
+    def _place(self, db, size, anchor_id=None, origin=None, kind=None, excluding=None):
+        cards = [c for c in self._cards(db) if c["lifecycle"] == "active" and c["id"] != excluding]
+        anchor = self._card(db, anchor_id)["layout"] if anchor_id else None
+        origin = origin or ({"x": anchor["x"] + anchor["w"] + 24, "y": anchor["y"]} if anchor else
+                            {"x": 0, "y": 0})
+        rows = sorted({origin["y"]} | {c["layout"]["y"] + c["layout"]["h"] + 24 for c in cards
+                                      if c["layout"]["y"] >= origin["y"]})
+        columns = sorted({origin["x"]} | {c["layout"]["x"] + c["layout"]["w"] + 24 for c in cards
+                                         if c["layout"]["x"] >= origin["x"]})
         for y in rows:
-            for x in range(13 - size["w"]):
-                layout = {"x": x, "y": y, "w": size["w"], "h": size["h"]}
+            for x in columns:
+                layout = {"space": "world", "x": x, "y": y, "w": size["w"], "h": size["h"],
+                          "z": size.get("z", 0),
+                          "height_mode": size.get("height_mode", "auto" if kind == "text" else "fixed")}
+                if x > 10000000 or y > 10000000:
+                    continue
                 if not any(overlaps(layout, c["layout"]) for c in cards):
                     return layout
         raise BusinessError("LAYOUT_CONFLICT", "无法自动放置，请指定布局。")
 
     def _summary(self, db, card):
         keys = ("id", "board_id", "type", "type_version", "title", "layout", "locked", "lifecycle",
-                "version", "last_revision", "updated_at", "updated_by")
+                "version", "content_version", "layout_version", "last_revision", "updated_at", "updated_by")
         result = {key: card[key] for key in keys}
         p, s, kind = card["props"], card["state"], card["type"]
         if kind == "text":

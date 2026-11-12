@@ -50,9 +50,20 @@ description: 使用 AgentBoard MCP 读取和维护人与 Agent 共用的持久�
 
 `props` 定义控件规则，`state` 保存当前共享值。例如只改说明时，提交 `changes={"description":"待实验验证"}`，保留用户已调整的 `state.value`。
 
+## 自由画布与正文
+
+看板 `schema_version="2.0"` 使用世界坐标。创建时省略 `layout` 自动寻找空位；围绕已有内容继续讨论时，可传 `anchor_card_id` 将新卡放在相关卡片旁。用户当前相机、缩放与显示风格仅保存在浏览器；更新资料后用卡片名称引导用户，页面提供“查看更新”入口。
+
+显式布局使用 `{"space":"world","x":-200,"y":100,"w":480,"h":336,"z":0,"height_mode":"auto"}`；100% 缩放时单位为 CSS 像素，支持负坐标与重叠。保留用户安排的位置，只有讨论需要调整布局时才提交布局修改。旧的 12 列网格坐标不可再写入。
+
+文本正文支持 Markdown 表格、嵌套列表、任务列表、代码块，以及 `$...$`／`\(...\)` 行内公式和 `$$...$$`／`\[...\]` 独立公式；代码中的公式标记按源码显示。`props.font_size` 为共享整数，范围 12～48、默认 16，Agent 可在创建或编辑时主动设置。例如 `props={"format":"markdown","font_size":24}`。按阅读需要选字号，后续只改正文时保留已有字号。
+
+文本默认 `height_mode="auto"` 按内容撑高，最多 720 后内部滚动；长推导可选 `expanded` 完整展开，手动设高用 `fixed`。标题与描述使用纯文本。
+
 ## 写入与重试
 
-- 每个新写入意图使用新的 UUID 作为 `command_id`；编辑、删除和恢复同时传入最近读取的卡片 `version` 作为 `expected_version`。
+- 每个新写入意图使用新的 UUID 作为 `command_id`。`edit_card` 改标题／描述／props／state 时传最近读取的 `content_version` 为 `expected_content_version`；改 layout 时传 `layout_version` 为 `expected_layout_version`；两者都改则同时传两个版本。这样用户挪卡片和 Agent 改正文可以合并。
+- 删除与恢复使用最近读取的 `version` 作为 `expected_version`。整卡检查的旧调用方式仍可用于编辑；锁定／解锁和生命周期变化会使两个分区都失效。已连接的旧 MCP 工具目录若没有新参数，重新连接加载新版目录。
 - 读取 `structuredContent` 中的 `ok`、`data`／`error` 与 `meta`，依据服务回执报告保存结果。
 - `VERSION_CONFLICT`：重新读取，审阅最新内容后只重建必要修改，使用新命令提交。`CARD_LOCKED`：保留待修改内容，请用户显式解锁。`CARD_DELETED`：按用户意图恢复或保留待办。
 - 超时或断线导致结果未知时，用原 `command_id` 调用 `get_operation_status`。`unknown`／`pending` 不是确定失败；需要重试时沿用原工具、原标识和完全相同的输入。结果仍不确定就报告待确认状态，留待连接恢复后处理。

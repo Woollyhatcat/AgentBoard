@@ -52,7 +52,8 @@ def create_server(service, host="127.0.0.1", port=8765):
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Referrer-Policy", "no-referrer")
             self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; "
-                             "style-src 'self'; img-src 'self' blob:; connect-src 'self'; "
+                             "style-src 'self'; style-src-attr 'unsafe-inline'; font-src 'self'; "
+                             "img-src 'self' blob:; connect-src 'self'; "
                              "object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
             for key, value in (headers or {}).items():
                 self.send_header(key, value)
@@ -88,7 +89,17 @@ def create_server(service, host="127.0.0.1", port=8765):
             else:
                 files = {"/": ("index.html", "text/html; charset=utf-8"),
                          "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+                         "/canvas.js": ("canvas.js", "text/javascript; charset=utf-8"),
+                         "/render.js": ("render.js", "text/javascript; charset=utf-8"),
                          "/style.css": ("style.css", "text/css; charset=utf-8")}
+                if path.startswith("/vendor/"):
+                    local = (STATIC / unquote(path).lstrip("/")).resolve()
+                    if local.is_relative_to((STATIC / "vendor").resolve()) and local.is_file():
+                        mime = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
+                                ".woff2": "font/woff2"}.get(local.suffix)
+                        if mime:
+                            self._send(200, local.read_bytes(), mime)
+                            return
                 if path not in files:
                     self._json(404, {"error": "地址不存在。"})
                     return

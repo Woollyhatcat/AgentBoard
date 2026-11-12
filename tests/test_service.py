@@ -205,12 +205,15 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(restored["card"]["id"], card["id"])
         self.assertFalse(self.ok(self.lifecycle("restore_card", restored["card"]))["changed"])
 
-    def test_layout_conflict_does_not_move_other_card(self):
+    def test_overlapping_layout_does_not_move_other_card(self):
         one, two = self.push(), self.push()
-        self.error(self.edit(two, {"layout": one["layout"]}), "LAYOUT_CONFLICT")
+        self.ok(self.edit(two, {"layout": one["layout"]}))
         self.assertEqual(self.read(one), one)
-        self.assertEqual(self.read(two), two)
-        self.error(self.edit(two, {"layout": {"x": 10}}), "VALIDATION_FAILED")
+        two = self.read(two)
+        self.assertEqual(two["layout"], one["layout"])
+        self.ok(self.edit(two, {"layout": {"space": "world", "x": -500, "y": -200}}))
+        two = self.read(two)
+        self.error(self.edit(two, {"layout": {"space": "world", "w": 179}}), "INVALID_ARGUMENT")
 
     def test_snapshot_is_frozen_while_writes_continue(self):
         first, second = self.push(), self.push()

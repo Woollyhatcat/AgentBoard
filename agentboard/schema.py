@@ -44,27 +44,31 @@ ID = string(255, 1)
 VERSION = {"type": "integer", "minimum": 1, "maximum": 9007199254740991}
 REVISION = {"type": "integer", "minimum": 0, "maximum": 9007199254740991}
 COMMAND = {"type": "string", "pattern": r"^[\x21-\x7e]{1,128}$", "maxLength": 128}
-LAYOUT = obj({"x": {"type": "integer", "minimum": 0, "maximum": 10},
-              "y": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
-              "w": {"type": "integer", "minimum": 2, "maximum": 12},
-              "h": {"type": "integer", "minimum": 2, "maximum": 24}}, ("x", "y", "w", "h"))
+LAYOUT = obj({"space": enum("world"),
+              "x": {"type": "number", "minimum": -10000000, "maximum": 10000000},
+              "y": {"type": "number", "minimum": -10000000, "maximum": 10000000},
+              "w": {"type": "number", "minimum": 180, "maximum": 10000},
+              "h": {"type": "number", "minimum": 100, "maximum": 20000},
+              "z": {"type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991},
+              "height_mode": enum("auto", "fixed", "expanded")}, ("space", "x", "y", "w", "h"))
 
 TYPES = {
     "text": {"label": "文本", "description": "说明、资料与阶段结论，支持安全 Markdown。",
-             "props_schema": obj({"format": enum("plain", "markdown")}),
+             "props_schema": obj({"format": enum("plain", "markdown"),
+                                  "font_size": {"type": "integer", "minimum": 12, "maximum": 48}}),
              "state_schema": obj({"text": string(100000)}, ("text",)),
-             "default_props": {"format": "markdown"}, "default_state": {},
-             "default_layout": {"w": 4, "h": 4}},
+             "default_props": {"format": "markdown", "font_size": 16}, "default_state": {},
+             "default_layout": {"w": 432, "h": 336}},
     "image": {"label": "图片", "description": "图片资源与说明；资源字节单独读取。",
               "props_schema": obj({"fit": enum("contain", "cover"), "alt": string(500)}),
               "state_schema": obj({"asset_id": ID, "caption": string()}, ("asset_id",)),
               "default_props": {"fit": "contain", "alt": ""},
-              "default_state": {"caption": ""}, "default_layout": {"w": 4, "h": 4}},
+              "default_state": {"caption": ""}, "default_layout": {"w": 432, "h": 336}},
     "file": {"label": "文件", "description": "导入副本或用户授权的本地文件引用。",
              "props_schema": obj({"preview": enum("auto", "none")}),
              "state_schema": obj({"asset_id": ID, "note": string()}, ("asset_id",)),
              "default_props": {"preview": "auto"}, "default_state": {"note": ""},
-             "default_layout": {"w": 4, "h": 2}},
+             "default_layout": {"w": 432, "h": 200}},
     "slider": {"label": "滑条", "description": "有限数值范围，按步长选择精确共享值。",
                "props_schema": obj({"min": NUMBER, "max": NUMBER, "step": NUMBER,
                                     "unit": string(24),
@@ -72,11 +76,11 @@ TYPES = {
                                    ("min", "max", "step")),
                "state_schema": obj({"value": NUMBER}, ("value",)),
                "default_props": {"unit": "", "precision": 2}, "default_state": {},
-               "default_layout": {"w": 4, "h": 2}},
+               "default_layout": {"w": 432, "h": 200}},
     "checkbox": {"label": "勾选框", "description": "共享一个明确的布尔状态。",
                  "props_schema": obj({"label": string(200, 1)}, ("label",)),
                  "state_schema": obj({"checked": BOOL}, ("checked",)),
-                 "default_props": {}, "default_state": {}, "default_layout": {"w": 3, "h": 2}},
+                 "default_props": {}, "default_state": {}, "default_layout": {"w": 320, "h": 180}},
     "input": {"label": "输入框", "description": "文本或数值输入；空值为 null，模式不可更改。",
               "props_schema": {"oneOf": [
                   obj({"mode": enum("text"), "placeholder": string(200), "required": BOOL,
@@ -87,7 +91,7 @@ TYPES = {
                        "precision": {"type": "integer", "minimum": 0, "maximum": 6}}, ("mode",))]},
               "state_schema": obj({"value": {"type": ["string", "number", "null"]}}, ("value",)),
               "default_props": {"placeholder": "", "required": False}, "default_state": {},
-              "default_layout": {"w": 4, "h": 2}},
+              "default_layout": {"w": 432, "h": 200}},
 }
 
 
@@ -216,9 +220,8 @@ def normalize_card(card, creating=False):
                 fail("此输入框必须填写数值，0 是有效值。", "state.value")
     if "layout" in card:
         validate(card["layout"], LAYOUT, "layout")
-        minimum = 3 if kind in ("text", "image", "file") else 2
-        if card["layout"]["w"] < minimum or card["layout"]["x"] + card["layout"]["w"] > 12:
-            fail(f"此卡片最小宽度为 {minimum}，且 x + w 不能超过 12。", "layout")
+        card["layout"].setdefault("z", 0)
+        card["layout"].setdefault("height_mode", "auto" if kind == "text" else "fixed")
     return card
 
 
@@ -228,8 +231,12 @@ def card_types():
         item = deepcopy(definition)
         item.pop("default_state")
         item.update(type=kind, type_version="1.0",
-                    min_layout={"w": 3 if kind in ("text", "image", "file") else 2, "h": 2},
-                    constraints=["完整卡片在局部合并后统一校验，未指定字段保留原值。"])
+                    min_layout={"w": 180, "h": 100},
+                    constraints=["完整卡片在局部合并后统一校验，未指定字段保留原值。",
+                                 "layout.space=world，单位为100%时CSS像素；允许负坐标与重叠。"])
+        if kind == "text":
+            item["constraints"] += ["font_size 为共享整数12～48，默认16；修改正文时保留未指定字号。",
+                                    "height_mode: auto限高720内部滚动，expanded完整展开，fixed固定高度。"]
         if kind == "slider":
             item["constraints"] += ["min < max; step > 0; value = min + n × step，n 为非负整数。",
                                     "min、max、step、value 最多六位小数；precision 只影响显示。"]
@@ -258,6 +265,7 @@ PAGE = {"limit": {"type": "integer", "minimum": 1, "maximum": 100}, "cursor": ID
 BOARD = {"board_id": ID}
 WRITE = BOARD | {"command_id": COMMAND}
 TARGET = WRITE | {"card_id": ID, "expected_version": VERSION}
+EDIT_TARGET = TARGET | {"expected_content_version": VERSION, "expected_layout_version": VERSION}
 PERMISSIONS = obj({k: BOOL for k in ("read", "create", "edit", "delete", "restore", "import_asset")})
 
 INPUTS = {
@@ -269,8 +277,8 @@ INPUTS = {
     "read_card": obj(BOARD | {"card_id": ID, "include_deleted": BOOL}, ("board_id", "card_id")),
     "get_board_snapshot": obj(BOARD | PAGE | {"view": enum("summary", "full")}, BOARD),
     "get_changes": obj(BOARD | PAGE | {"since_revision": REVISION}, ("board_id", "since_revision")),
-    "push_card": obj(WRITE | {"card": CREATE_CARD}, ("board_id", "command_id", "card")),
-    "edit_card": obj(TARGET | {"changes": CHANGES}, tuple(TARGET) + ("changes",)),
+    "push_card": obj(WRITE | {"card": CREATE_CARD, "anchor_card_id": ID}, ("board_id", "command_id", "card")),
+    "edit_card": obj(EDIT_TARGET | {"changes": CHANGES}, ("board_id", "command_id", "card_id", "changes")),
     "delete_card": obj(TARGET, TARGET),
     "restore_card": obj(TARGET, TARGET),
     "get_asset_sources": obj(BOARD, BOARD),
@@ -303,8 +311,8 @@ DESCRIPTIONS = {
     "read_card": "读取完整卡片。资源正文使用 read_asset 单独读取。",
     "get_board_snapshot": "固定 revision 的快照；收齐分页后以此 revision 继续读取变化。",
     "get_changes": "读取固定截至版本的完整变更事件。完整消费后继续下一轮。",
-    "push_card": "创建卡片，省略 layout 可自动放置。相同命令标识重试不会重复创建。",
-    "edit_card": "基于 expected_version 局部合并编辑；未指定内容保持不变。",
+    "push_card": "创建卡片；text.props.font_size 支持12～48，省略 layout 自动放置，可用 anchor_card_id 指定邻近卡片。world 布局允许重叠。相同命令重试不重复创建。",
+    "edit_card": "局部编辑；可用 expected_content_version / expected_layout_version 分别检查内容与布局，或 expected_version 整卡检查。world 布局需 space。",
     "delete_card": "基于 expected_version 软删除，可恢复；不会删除资源或原文件。",
     "restore_card": "恢复原卡片；原位置被占用时自动安排并告知。",
     "get_asset_sources": "列出用户授权目录的逻辑标识；不能自行扩大授权范围。",
