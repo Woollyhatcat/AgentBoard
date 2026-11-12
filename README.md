@@ -84,6 +84,7 @@ Agent 布局时可调用 `get_board_screenshot` 获取原生PNG图像、实际�
 ## 当前功能
 
 - 文本（Markdown 表格、嵌套列表、任务列表、代码块与 LaTeX）、图片、文件、滑条、勾选框、文本／数值输入。
+- 通用交互卡片：Agent通过MCP生成HTML/CSS/JavaScript数学演示，卡内控件即时重绘并保存参数，可只读绑定其他卡片；自带复平面向量实验、停止／重置／重新运行和截图就绪检查。接口见 [交互卡片文档](doc/interactive-cards.md)。
 - 文本源码编辑与实时预览；共享字号 12～48（默认 16），MCP 可通过 `props.font_size` 创建／修改。自动高度、完整展开与手动固定高度。
 - 桌面自由画布：拖标题移动、右下角调整尺寸、允许重叠与负坐标；空白／空格拖动／中键平移，滚轮平移，Ctrl＋滚轮按指针缩放 10%～400%。
 - 查看全部、原点、选中定位、共享置顶／置底和可选网格吸附。相机保存在本机，Agent 更新不改变用户视角。
@@ -102,7 +103,7 @@ Agent 布局时可调用 `get_board_screenshot` 获取原生PNG图像、实际�
 
 只有用户能在「看板设置」授权本地目录、撤销授权和调整 Agent 权限。MCP 只返回目录逻辑标识与标签，不返回绝对路径。资源路径会解析真实目标并检查目录边界，拒绝路径穿越、盘符和 NTFS 备用数据流；每次读取都重新核对引用状态。撤销目录权限后引用不可读，之前的导入副本仍可读取。
 
-单资源最多 **20 MiB**，Agent inline 导入最多 **1 MiB**。图片支持 PNG、JPEG、WebP、GIF；UTF-8 文本可分段预览，其他格式下载原文件。HTML／SVG 不按网页执行；不抓取远程 URL，不运行文件、命令或仿真。
+单资源最多 **20 MiB**，Agent inline 导入最多 **1 MiB**。图片支持 PNG、JPEG、WebP、GIF；UTF-8 文本可分段预览，其他格式下载原文件。导入的HTML／SVG不按网页执行。新增interactive类型只在隔离页面中执行其演示源码，提供自身参数保存与声明的只读输入，不提供宿主页、文件或命令接口；具体CSP与运行限制见交互卡片文档。
 
 ## 测试
 
@@ -111,6 +112,8 @@ python -m unittest discover -v
 node --check agentboard/web/app.js
 node --check agentboard/web/canvas.js
 node --check agentboard/web/render.js
+node --check agentboard/web/interactive.js
+node --check agentboard/web/interactive-sdk.js
 ```
 
 Python 测试使用临时 SQLite 数据目录，覆盖版本冲突、同时写入、幂等重放、生命周期、跨页一致性、资源撤权与分片、正常重启、HTTP 来源校验、MCP 协议及真实 stdio 子进程。Node 仅用于开发时语法检查，运行产品不需要 Node。
@@ -142,4 +145,4 @@ tests/                    服务与协议集成测试
 doc/                      原始规格与实现验收记录
 ```
 
-本版本不包含 P1 的多看板、多人协作、完整历史回滚、批量编辑、主动调度、事件消费或任意脚本卡片。网页修改不会自动唤起 Agent 推理。
+本版本不包含 P1 的多看板、多人协作、完整历史回滚、批量编辑、主动调度、事件消费或服务端任意脚本执行。交互演示在浏览器中计算；网页修改不会自动唤起 Agent 推理。

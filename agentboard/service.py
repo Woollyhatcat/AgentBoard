@@ -260,6 +260,7 @@ class BoardService:
             card.update(id=uid("card"), board_id=board["id"], locked=False, lifecycle="active",
                         version=0, content_version=0, layout_version=0,
                         created_at=now(), created_by=actor, deleted_at=None, deleted_by=None)
+            self._check_bindings(db,card)
             self._commit_card(db, board, actor, card, "created", content_changed=True, layout_changed=True)
             return {"card": card, "changed": True,
                     "placement": "requested" if "layout" in a["card"] else "automatic"}
@@ -290,6 +291,8 @@ class BoardService:
                 if card["type"] == "input" and card["props"].get("mode") != original["props"]["mode"]:
                     fail("输入框模式不可更改，请创建新卡片。", "props.mode")
                 card = normalize_card(card)
+                if card["type"] == "interactive" and card["props"]["bindings"] != original["props"]["bindings"]:
+                    self._check_bindings(db,card)
                 if card["type"] in ("image", "file") and card["state"]["asset_id"] != original["state"]["asset_id"]:
                     self._check_asset_link(db, board, card)
                 kind = "updated"
@@ -416,6 +419,39 @@ class BoardService:
         return [c for c in self._cards(db) if c["lifecycle"] == "active" and
                 c["id"] != excluding and overlaps(layout, c["layout"])]
 
+    def _check_bindings(self, db, card):
+        if card["type"] != "interactive":
+            return
+        cards = {c["id"]:c for c in self._cards(db)}
+        for alias, binding in card["props"]["bindings"].items():
+            source = cards.get(binding["card_id"])
+            path = "props.bindings."+alias
+            if not source or source["lifecycle"] != "active":
+                fail("绑定来源不存在或已删除。",path)
+            value = source
+            try:
+                for key in binding["path"].split("/")[1:]:
+                    key = key.replace("~1","/").replace("~0","~")
+                    if isinstance(value,list):
+                        if not key.isascii() or not key.isdecimal() or (key != "0" and key.startswith("0")):
+                            raise KeyError(key)
+                        value = value[int(key)]
+                    else:
+                        value = value[key]
+            except (KeyError,IndexError,TypeError,ValueError):
+                fail("来源中不存在此状态路径。",path+".path")
+            pending, seen = [source["id"]], set()
+            while pending:
+                target = pending.pop()
+                if target == card["id"]:
+                    fail("数据绑定不能引用自己或形成环。",path)
+                if target in seen:
+                    continue
+                seen.add(target)
+                node = cards.get(target)
+                if node and node["type"] == "interactive":
+                    pending.extend(b["card_id"] for b in node["props"]["bindings"].values())
+
     def _place(self, db, size, anchor_id=None, origin=None, kind=None, excluding=None):
         cards = [c for c in self._cards(db) if c["lifecycle"] == "active" and c["id"] != excluding]
         anchor = self._card(db, anchor_id)["layout"] if anchor_id else None
@@ -453,6 +489,9 @@ class BoardService:
         elif kind == "input":
             preview = {"mode": p["mode"], "value": s["value"], "unit": p.get("unit", "")}
             summary = str(s["value"]) if s["value"] is not None else "未填写"
+        elif kind == "interactive":
+            preview = {"values":s["values"],"binding_count":len(p["bindings"])}
+            summary = "交互演示 · "+str(len(p["bindings"]))+"个绑定"
         else:
             row = db.execute("SELECT body FROM assets WHERE id=?", (s["asset_id"],)).fetchone()
             name = json.loads(row[0])["name"] if row else None

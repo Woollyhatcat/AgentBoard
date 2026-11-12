@@ -15,6 +15,7 @@ MCP content 包含文本元数据和原生 image/png 图像。structuredContent.
 - focus_bounds：请求区域或卡片包围盒；visible_world：截图真正覆盖的世界区域。区域与图像宽高比不同时等比居中，可能显示周围空间。
 - cards：目标卡片标识、标题、版本及 content_version/layout_version、实际 world 矩形、pixels 矩形、visible、body_overflow。auto实际高度不等于layout.h估计值；fixed/auto中的长文仍按阅读态内部滚动。
 - assets：图像读取时的资源版本；warnings：不可用资源等情况；math_errors：无法渲染的公式数量。
+- interactive：交互演示的ready、error、math_errors、body_overflow、input_errors及绑定来源的content_version。单卡截图也从同一冻结快照读取绑定来源，来源卡片不必出现在图中。截图相机定位后，为图中可见演示最多等待约9秒；区域外演示可保持ready=false。
 - path：本地PNG路径，旁边有相同文件名的JSON元数据，位于 data/screenshots/，不进入资源库或Git，当前不会自动清理。
 
 实现复用网页卡片、Markdown、LaTeX、字体和样式。后台浏览器使用临时独立上下文，在拦截的保留域名 agentboard.invalid 下加载固定快照与本地资源，禁止页面发起写入或外部网络请求。无需打开用户浏览器或运行HTTP服务；不读取用户当前视角、主题和草稿，也不修改这些状态。概览不受交互相机10%下限约束，远距离卡片仍可收入同一图中；使用单卡／区域截图检查可读性。

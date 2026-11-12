@@ -4,6 +4,7 @@ from copy import deepcopy
 from decimal import Decimal
 import math
 import re
+import json
 
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
 
@@ -92,7 +93,36 @@ TYPES = {
               "state_schema": obj({"value": {"type": ["string", "number", "null"]}}, ("value",)),
               "default_props": {"placeholder": "", "required": False}, "default_state": {},
               "default_layout": {"w": 432, "h": 200}},
+    "interactive": {"label":"交互演示", "description":"HTML/CSS/JavaScript数学小程序，使用内置Board接口共享参数和读取绑定数据。",
+        "props_schema":obj({"source":string(200000,1), "initial_state":{"type":"object"},
+                            "bindings":{"type":"object"}}, ("source",)),
+        "state_schema":obj({"values":{"type":"object"}}, ("values",)),
+        "default_props":{"initial_state":{},"bindings":{}}, "default_state":{},
+        "default_layout":{"w":720,"h":700}},
 }
+
+
+def validate_json_object(value, path, limit=65536):
+    """Bounded portable JSON state, without prototype-sensitive property names."""
+    def visit(item, depth):
+        if depth > 16:
+            fail("JSON嵌套最多16层。",path)
+        if type(item) is dict:
+            for key, child in item.items():
+                if type(key) is not str or key in ("__proto__","constructor","prototype"):
+                    fail("JSON包含不允许的属性名。",path)
+                visit(child, depth+1)
+        elif type(item) is list:
+            for child in item:
+                visit(child,depth+1)
+        elif item is not None and type(item) not in (str,int,float,bool):
+            fail("状态仅接受JSON值。",path)
+        elif type(item) is float and not math.isfinite(item):
+            fail("JSON数值必须有限。",path)
+    validate(value,{"type":"object"},path)
+    visit(value,0)
+    if len(json.dumps(value,ensure_ascii=False,allow_nan=False).encode("utf-8")) > limit:
+        fail("JSON数据超过允许大小。",path)
 
 
 def validate(value, schema, path="", code="VALIDATION_FAILED"):
@@ -172,6 +202,8 @@ def normalize_card(card, creating=False):
     if creating:
         card.setdefault("description", "")
         card["props"] = definition["default_props"] | card["props"]
+        if kind == "interactive" and "values" not in card["state"]:
+            card["state"]["values"] = deepcopy(card["props"]["initial_state"])
         card["state"] = definition["default_state"] | card["state"]
         if kind == "input":
             extra = ({"max_length": 500} if card["props"].get("mode") == "text" else
@@ -180,6 +212,18 @@ def normalize_card(card, creating=False):
     p, s = card["props"], card["state"]
     validate(p, definition["props_schema"], "props")
     validate(s, definition["state_schema"], "state")
+    if kind == "interactive":
+        validate_json_object(p["initial_state"],"props.initial_state")
+        validate_json_object(s["values"],"state.values")
+        validate_json_object(p["bindings"],"props.bindings",8192)
+        if len(p["bindings"]) > 16:
+            fail("最多绑定16个输入。","props.bindings")
+        for alias, binding in p["bindings"].items():
+            if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,31}",alias):
+                fail("绑定名称须为字母开头的标识符。","props.bindings")
+            validate(binding,obj({"card_id":ID,"path":string(255,1)},("card_id","path")),"props.bindings."+alias)
+            if not re.fullmatch(r"/state(?:/(?:[^~/]|~[01])*)+",binding["path"]):
+                fail("绑定使用/state下的JSON Pointer。","props.bindings."+alias+".path")
     if kind == "slider":
         decimal_values = [decimal6(v, k) for v, k in
                                 ((p["min"], "props.min"), (p["max"], "props.max"),
@@ -224,6 +268,8 @@ def normalize_card(card, creating=False):
         validate(card["layout"], LAYOUT, "layout")
         card["layout"].setdefault("z", 0)
         card["layout"].setdefault("height_mode", "auto" if kind == "text" else "fixed")
+        if kind == "interactive" and card["layout"]["height_mode"] != "fixed":
+            fail("交互演示使用fixed高度，可拖角调整。","layout.height_mode")
     return card
 
 
@@ -239,6 +285,11 @@ def card_types():
         if kind == "text":
             item["constraints"] += ["font_size 为共享整数12～48，默认16；修改正文时保留未指定字号。",
                                     "height_mode: auto限高720内部滚动，expanded完整展开，fixed固定高度。"]
+        if kind == "interactive":
+            item["constraints"] += ["source为完整HTML/CSS/JavaScript，最多200000字符。",
+                "Board.onChange(({state,inputs,inputErrors,readOnly,theme,mode})=>{...;Board.rendered();}); Board.setState(patch)保存自身参数；Board.reset()恢复initial_state；Board.math(element,latex,options)渲染公式。",
+                "values/initial_state为最多64KiB、16层JSON对象；bindings最多16项，格式{alias:{card_id,path:'/state/value'}}，只读、不能形成环。",
+                "在sandbox中执行，本地内置KaTeX；不支持CDN依赖、宿主页访问或任意MCP调用。交互锁定时不能保存参数；仅fixed高度。"]
         if kind == "slider":
             item["constraints"] += ["min < max; step > 0; value = min + n × step，n 为非负整数。",
                                     "min、max、step、value 最多六位小数；precision 只影响显示。"]
@@ -316,7 +367,7 @@ WRITES = {"push_card", "edit_card", "delete_card", "restore_card", "import_asset
 DESCRIPTIONS = {
     "list_boards": "列出当前身份可访问的看板。首版只有一块看板。",
     "get_board_info": "读取看板标识、权限、类型与服务限制。",
-    "get_card_types": "发现六类卡片的 JSON Schema、默认值及交叉字段约束。",
+    "get_card_types": "发现七类卡片的 JSON Schema、默认值及交叉字段约束，包括可生成的interactive交互演示。",
     "get_card_list": "按位置读取固定时点的卡片摘要；可筛选回收站。",
     "read_card": "读取完整卡片。资源正文使用 read_asset 单独读取。",
     "get_board_snapshot": "固定 revision 的快照；收齐分页后以此 revision 继续读取变化。",

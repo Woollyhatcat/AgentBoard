@@ -43,6 +43,7 @@ class ServiceTests(unittest.TestCase):
             "slider": {"props": {"min": 0, "max": 10, "step": 0.1}, "state": {"value": 2.5}},
             "checkbox": {"props": {"label": "已经验证"}, "state": {"checked": False}},
             "input": {"props": {"mode": "number"}, "state": {"value": 0}},
+            "interactive": {"props":{"source":"<p>数学实验</p>"},"state":{}},
         }
         card = {"type": kind, "type_version": "1.0", "title": "测试 " + kind,
                 **defaults.get(kind, {}), **overrides}
@@ -72,11 +73,11 @@ class ServiceTests(unittest.TestCase):
         return self.ok(self.call("import_asset", {"name": relative_path, "mode": "reference",
             "source": {"kind": "approved_file", "root_id": root_id, "relative_path": relative_path}}))["asset"]
 
-    def test_discovery_and_six_card_roundtrips(self):
+    def test_discovery_and_seven_card_roundtrips(self):
         types = self.ok(self.call("get_card_types"))["types"]
-        self.assertEqual(len(types), 6)
+        self.assertEqual(len(types), 7)
         self.assertTrue(all(t["props_schema"]["$schema"].endswith("2020-12/schema") for t in types))
-        for kind in ("text", "slider", "checkbox", "input"):
+        for kind in ("text", "slider", "checkbox", "input", "interactive"):
             card = self.push(kind)
             self.assertEqual(self.read(card), card)
         asset = self.asset(PNG, "截图.png")
@@ -84,7 +85,7 @@ class ServiceTests(unittest.TestCase):
             card = self.push(kind, props={}, state={"asset_id": asset["id"]})
             self.assertEqual(self.read(card), card)
         info = self.ok(self.call("get_board_info"))
-        self.assertEqual(info["active_card_count"], 6)
+        self.assertEqual(info["active_card_count"], 7)
         self.assertFalse(info["permissions"]["manage_lock"])
 
     def test_user_agent_parameter_collaboration(self):

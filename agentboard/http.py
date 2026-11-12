@@ -7,12 +7,14 @@ from pathlib import Path
 import secrets
 import socket
 from threading import Thread
-from urllib.parse import urlsplit, unquote
+from urllib.parse import urlsplit, unquote, parse_qs
+import re
 
 from .mcp import reject_constant
 from .service import USER, LIMITS, dump
 from .schema import BusinessError
 from .runtime import storage_id
+from .interactive import FRAME_CSP, frame_document
 
 STATIC = Path(__file__).parent / "web"
 
@@ -51,11 +53,12 @@ def create_server(service, host="127.0.0.1", port=8765):
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Referrer-Policy", "no-referrer")
-            self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; "
+            extra = dict(headers or {})
+            self.send_header("Content-Security-Policy", extra.pop("Content-Security-Policy", "default-src 'self'; script-src 'self'; "
                              "style-src 'self'; style-src-attr 'unsafe-inline'; font-src 'self'; "
                              "img-src 'self' blob:; connect-src 'self'; "
-                             "object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
-            for key, value in (headers or {}).items():
+                             "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"))
+            for key, value in extra.items():
                 self.send_header(key, value)
             self.end_headers()
             self.wfile.write(content)
@@ -73,6 +76,22 @@ def create_server(service, host="127.0.0.1", port=8765):
             elif path == "/api/health":
                 self._json(200, {"service": "agentboard", "status": "ready", "board_id": "board_local",
                                  "storage_id": storage_id(service.data_dir)})
+            elif path.startswith("/api/interactive/"):
+                query = parse_qs(urlsplit(self.path).query)
+                key = query.get("key",[""])[0]
+                card_id = unquote(path.removeprefix("/api/interactive/"))
+                if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}",key):
+                    self._json(400,{"error":"演示会话标识无效。"}); return
+                result = service.call("read_card",{"board_id":"board_local","card_id":card_id},USER)
+                if not result["ok"]:
+                    self._json(404,result); return
+                card = result["data"]["card"]
+                if card["type"] != "interactive":
+                    self._json(404,{"error":"不是交互卡片。"}); return
+                if query.get("v",[str(card["content_version"])])[0] != str(card["content_version"]):
+                    self._json(409,{"error":"演示已更新，请加载最新版本。"}); return
+                self._send(200,frame_document(card,key),"text/html; charset=utf-8",{
+                    "Content-Security-Policy":FRAME_CSP,"Permissions-Policy":"camera=(), microphone=(), geolocation=()"})
             elif path.startswith("/api/assets/"):
                 parts = path.strip("/").split("/")
                 if len(parts) not in (3, 4) or (len(parts) == 4 and parts[3] != "download"):
@@ -91,6 +110,8 @@ def create_server(service, host="127.0.0.1", port=8765):
                          "/app.js": ("app.js", "text/javascript; charset=utf-8"),
                          "/canvas.js": ("canvas.js", "text/javascript; charset=utf-8"),
                          "/render.js": ("render.js", "text/javascript; charset=utf-8"),
+                         "/interactive.js": ("interactive.js", "text/javascript; charset=utf-8"),
+                         "/examples/complex-angle.html": ("examples/complex-angle.html", "text/plain; charset=utf-8"),
                          "/style.css": ("style.css", "text/css; charset=utf-8")}
                 if path.startswith("/vendor/"):
                     local = (STATIC / unquote(path).lstrip("/")).resolve()

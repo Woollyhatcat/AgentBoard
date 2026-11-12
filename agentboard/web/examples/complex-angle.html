@@ -1,0 +1,43 @@
+<style>
+  h3{margin:0 0 2px;font-size:17px}p{margin:5px 0;font-size:12px;opacity:.8}
+  .controls{display:grid;gap:6px;margin:10px 0}.control{display:grid;grid-template-columns:85px 1fr 52px;gap:9px;align-items:center;font-size:12px}
+  input[type=range]{width:100%;accent-color:#3887c7}output{text-align:right;font-variant-numeric:tabular-nums}
+  svg{width:100%;height:245px;display:block;border:1px solid #66888840;border-radius:8px}
+  .results{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-top:6px}.results strong{font-variant-numeric:tabular-nums}
+  #formula{font-size:15px;margin-top:8px;overflow:auto}#note{min-height:20px}
+</style>
+<h3>根的位置，如何改变向量的相角？</h3>
+<p>移动频率 ω，观察从 λ 指向 s=jω 的向量。也可将 omega、sigma、beta 绑定到其他卡片。</p>
+<div class="controls">
+  <label class="control">频率 ω<input id="omega" aria-label="频率ω" type="range" min="-6" max="6" step="0.05"><output id="omega-value"></output></label>
+  <label class="control">实部 σ<input id="sigma" aria-label="根的实部σ" type="range" min="-4" max="4" step="0.1"><output id="sigma-value"></output></label>
+  <label class="control">虚部 β<input id="beta" aria-label="根的虚部β" type="range" min="-3" max="3" step="0.1"><output id="beta-value"></output></label>
+</div>
+<svg id="plane" viewBox="0 0 420 320" role="img" aria-label="复平面向量图"></svg>
+<div class="results"><span>主值相角：<strong id="principal"></strong></span><span>连续相角：<strong id="continuous"></strong></span></div>
+<div id="formula"></div><p id="note"></p>
+<script>
+  const names=['omega','sigma','beta'];
+  for(const name of names)document.getElementById(name).addEventListener('input',event=>Board.setState({[name]:Number(event.target.value)}));
+  Board.onChange(({state,inputs,readOnly})=>{
+    const value={omega:0,sigma:-2,beta:0,...state,...inputs};
+    for(const name of names){
+      const control=document.getElementById(name);control.value=value[name];
+      control.disabled=readOnly||Object.hasOwn(inputs,name);
+      document.getElementById(name+'-value').textContent=Number(value[name]).toFixed(2);
+    }
+    const {omega,sigma,beta}=value,dy=omega-beta;
+    const zero=sigma===0&&dy===0;
+    const principal=zero?null:Math.atan2(dy,-sigma)*180/Math.PI;
+    const continuous=sigma<0?Math.atan(dy/(-sigma))*180/Math.PI:sigma>0?-180-Math.atan(dy/sigma)*180/Math.PI:null;
+    document.getElementById('principal').textContent=principal===null?'无定义':principal.toFixed(1)+'°';
+    document.getElementById('continuous').textContent=continuous===null?'不跨越零向量展开':continuous.toFixed(1)+'°';
+    document.getElementById('note').textContent=sigma<0?'左半平面根：ω 从 −∞ 增至 +∞ 时，连续相角增加180°。':sigma>0?'右半平面根：ω 从 −∞ 增至 +∞ 时，连续相角减少180°；主值的跳变不代表向量突然反转。':'虚轴根：扫频会经过零向量，该处相角无定义，不能连续跨越。';
+    const x=210+sigma*24,y=160-beta*24,sy=160-omega*24;
+    let grid='';for(let k=-6;k<=6;k++)grid+=`<path d="M66 ${160-k*24}H354 M${210+k*24} 16V304" stroke="currentColor" opacity=".07"/>`;
+    const arc=principal===null?'':`<path d="M${x+25} ${y} A25 25 0 ${Math.abs(principal)>180?1:0} ${principal>=0?0:1} ${x+25*Math.cos(principal*Math.PI/180)} ${y-25*Math.sin(principal*Math.PI/180)}" fill="none" stroke="#ed9b39" stroke-width="2"/>`;
+    document.getElementById('plane').innerHTML=`<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#3887c7"/></marker></defs>${grid}<path d="M20 160H400 M210 307V12" stroke="currentColor" opacity=".45"/><g fill="currentColor" font-size="12"><text x="381" y="179">Re</text><text x="220" y="24">Im</text><text x="215" y="175">0</text></g><path d="M${x} ${y}H${x+40}" stroke="#ed9b39" opacity=".5" stroke-dasharray="3 3"/>${arc}<path d="M${x} ${y}L210 ${sy}" stroke="#3887c7" stroke-width="3" marker-end="url(#arrow)"/><circle cx="${x}" cy="${y}" r="5" fill="#d97756"/><circle cx="210" cy="${sy}" r="4" fill="#3887c7"/><g fill="currentColor" font-size="13"><text x="${x+9}" y="${y+17}">λ</text><text x="221" y="${Math.max(15,sy-8)}">s=jω</text></g>`;
+    Board.math(document.getElementById('formula'),`s-\\lambda=${(-sigma).toFixed(2)}${dy>=0?'+':''}${dy.toFixed(2)}j`);
+    Board.rendered();
+  });
+</script>

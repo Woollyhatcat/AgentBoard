@@ -58,6 +58,7 @@ class MCPConnection:
                                       "写入使用稳定 command_id；编辑按内容／布局分区版本检查，删除恢复使用 expected_version；"
                                       "网页变化不会自动启动 Agent。" +
                                       "布局可调用 get_board_screenshot 获取真实渲染图像与坐标。" +
+                                      "数学交互可创建interactive卡片；先查询其类型约束，使用Board接口保存参数与读取绑定。" +
                                       ("网页看板：" + web["url"] + "。" if web["status"] == "running" else
                                        "网页服务未就绪，请读取 get_board_info 的 web 状态。")}
         elif method == "ping":

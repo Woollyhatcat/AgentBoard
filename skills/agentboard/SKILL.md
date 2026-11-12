@@ -1,6 +1,6 @@
 ---
 name: agentboard
-description: 使用 AgentBoard MCP 读取和维护人与 Agent 共用的持久化黑板。用户要求查看或更新 AgentBoard 黑板、保存协作资料、读取共享参数或操作其卡片时使用。
+description: 使用 AgentBoard MCP 维护人与 Agent 共用的持久化黑板。查看或更新黑板、保存协作资料、读取共享参数，以及在 AgentBoard 上生成交互数学演示时使用。
 ---
 
 # AgentBoard
@@ -33,7 +33,7 @@ description: 使用 AgentBoard MCP 读取和维护人与 Agent 共用的持久�
 
 | 意图 | 工具与用法 |
 | --- | --- |
-| 保存资料或参数 | `push_card`；六类为 `text`、`image`、`file`、`slider`、`checkbox`、`input`，`type_version` 为 `1.0`。省略 `layout` 可自动放置。 |
+| 保存资料或参数 | `push_card`；七类为 `text`、`image`、`file`、`slider`、`checkbox`、`input`、`interactive`，`type_version` 为 `1.0`。省略 `layout` 可自动放置。 |
 | 更新已有卡片 | `read_card` 后调用 `edit_card`；只在 `changes` 中提交实际要修改的 `title`、`description`、`props`、`state` 或 `layout`。 |
 | 删除或恢复 | `delete_card` 软删除；`get_card_list(lifecycle="deleted")` 查回收站，`restore_card` 恢复原标识。 |
 | 添加或读取资源 | `get_asset_sources` 查询授权来源，`import_asset` 添加资源，`get_asset_info` 核对状态，`read_asset` 读取真实内容。 |
@@ -59,6 +59,16 @@ description: 使用 AgentBoard MCP 读取和维护人与 Agent 共用的持久�
 文本正文支持 Markdown 表格、嵌套列表、任务列表、代码块，以及 `$...$`／`\(...\)` 行内公式和 `$$...$$`／`\[...\]` 独立公式；代码中的公式标记按源码显示。`props.font_size` 为共享整数，范围 12～48、默认 16，Agent 可在创建或编辑时主动设置。例如 `props={"format":"markdown","font_size":24}`。按阅读需要选字号，后续只改正文时保留已有字号。
 
 文本默认 `height_mode="auto"` 按内容撑高，最多 720 后内部滚动；长推导可选 `expanded` 完整展开，手动设高用 `fixed`。标题与描述使用纯文本。
+
+## 生成交互数学演示
+
+当拖动参数、几何运动或动画有助理解时，可生成interactive卡片，围绕用户操作继续讨论。具体数学内容由演示程序实现，遵循用户对讲解和板书的范围要求。
+
+创建或修改演示前，读取 [交互卡片接口与示例](C:/Tools/AgentBoard/doc/interactive-cards.md)，并查询get_card_types(type="interactive")。用props.source提交完整HTML/CSS/JavaScript，props.initial_state定义初始参数，state.values保存当前参数；控件和图可放在同一卡片内，跨卡片联动再设置props.bindings。原生SVG/Canvas和内置Board.math可用于绘图与公式，使用Board.onChange接收参数、Board.setState保存自身参数、Board.rendered报告绘图完成；异步绘图先调用Board.deferReady。
+
+MCP只改源码时保留values；改values时先读最新对象、合并目标字段，再提交完整values。绑定只读，可引用来源的/state/value等JSON Pointer，不能自引用或形成环。用户反馈后读取values及绑定来源；浏览器中的即时重绘不会自动触发Agent推理。
+
+创建后用get_board_screenshot检查data.interactive、warnings和math_errors，确认程序就绪与关键数学情形正确。截图会携带绑定的冻结参数，不写回状态。优先使用内联代码和已提供的库；程序支持范围与隔离限制见接口文档。旧MCP进程需重连加载新类型。
 
 ## 用截图检查布局
 

@@ -6,7 +6,8 @@ from pathlib import Path
 import re
 import sqlite3
 from threading import BoundedSemaphore
-from urllib.parse import unquote, urlsplit
+from urllib.parse import unquote, urlsplit, parse_qs
+from .interactive import FRAME_CSP, frame_document
 
 from .schema import BusinessError, INPUTS, validate
 from .service import dump, uid
@@ -44,11 +45,15 @@ def _prepare(service, args, actor):
         cards.extend(page["items"]); revision = page["revision"]; cursor = page["next_cursor"]
         if not cursor:
             break
+    all_cards = {card["id"]:card for card in cards}
     if view == "card":
         cards = [card for card in cards if card["id"] == args["card_id"]]
         if not cards:
             raise BusinessError("NOT_FOUND", "目标卡片不存在或已删除。")
     asset_ids = set()
+    source_ids = {binding["card_id"] for card in cards if card["type"] == "interactive"
+                  for binding in card["props"]["bindings"].values()}
+    rendered_ids = {card["id"] for card in cards}
     for card in cards:
         if card["type"] in ("image", "file"):
             asset_ids.add(card["state"]["asset_id"])
@@ -64,7 +69,8 @@ def _prepare(service, args, actor):
         else:
             warnings.append("资源不可用：" + asset_id)
     return {"board":{k:info[k] for k in ("id","name","description")}, "revision":revision,
-            "cards":cards,"assets":assets,"options":options,"warnings":warnings}
+            "cards":cards,"source_cards":[all_cards[id] for id in sorted(source_ids-rendered_ids) if id in all_cards],
+            "assets":assets,"options":options,"warnings":warnings}
 
 
 def _render(service, payload, actor):
@@ -107,6 +113,14 @@ def _render(service, payload, actor):
                         headers={"Content-Security-Policy":"default-src 'self'; script-src 'self'; "
                             "style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self'; font-src 'self'; "
                             "object-src 'none'; base-uri 'none'"}); return
+                if path.startswith("/api/interactive/"):
+                    card_id = path.removeprefix("/api/interactive/")
+                    card = next((card for card in payload["cards"] if card["id"] == card_id and card["type"] == "interactive"),None)
+                    key = parse_qs(url.query).get("key",[""])[0]
+                    if card and re.fullmatch(r"[A-Za-z0-9_-]{1,128}",key):
+                        route.fulfill(status=200,content_type="text/html; charset=utf-8",body=frame_document(card,key),
+                                      headers={"Content-Security-Policy":FRAME_CSP}); return
+                    route.fulfill(status=404,body="Not found"); return
                 if re.fullmatch(r"/api/assets/asset_[a-f\d]+", path):
                     asset_id = path.rsplit("/",1)[1]
                     try:
@@ -119,7 +133,7 @@ def _render(service, payload, actor):
                         warnings.append("图片资源不可用：" + asset_id)
                     route.fulfill(status=404,body="Unavailable"); return
                 local = (STATIC / path.lstrip("/")).resolve()
-                allowed = (path in ("/app.js","/capture.js","/canvas.js","/render.js","/style.css") or
+                allowed = (path in ("/app.js","/capture.js","/canvas.js","/render.js","/interactive.js","/style.css") or
                            path.startswith("/vendor/"))
                 mime = {".js":"text/javascript", ".css":"text/css", ".woff2":"font/woff2"}.get(local.suffix)
                 if allowed and local.is_relative_to(STATIC.resolve()) and local.is_file() and mime:

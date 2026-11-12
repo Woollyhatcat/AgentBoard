@@ -106,6 +106,11 @@ class FreeCanvas {
     });
   }
   bindInput() {
+    // Focus/scrollIntoView inside embedded programs must not move the world by
+    // changing the browser's native scroll offset behind the saved camera.
+    this.viewport.addEventListener("scroll",() => {
+      if (this.viewport.scrollLeft || this.viewport.scrollTop) this.viewport.scrollTo(0,0);
+    });
     document.addEventListener("keydown", event => {
       if (event.code === "Space" && !event.target.closest("input,textarea,select,[contenteditable=true],dialog")) {
         this.space = true; this.viewport.classList.add("pan-ready"); event.preventDefault();

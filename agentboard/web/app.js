@@ -11,6 +11,7 @@ const TYPES = {
   slider: {label: "滑条", icon: "☷", hint: "直观调整一个共享参数"},
   checkbox: {label: "勾选框", icon: "☑", hint: "明确表达确认与验证状态"},
   input: {label: "输入框", icon: "⌨", hint: "补充文字或精确数值"},
+  interactive: {label:"交互演示",icon:"◇",hint:"可生成的图形、动画与数学实验"},
 };
 const DEFAULTS = {
   text: {title: "任务说明", props: {format: "markdown", font_size: 16}, state: {text: ""}},
@@ -19,6 +20,7 @@ const DEFAULTS = {
   slider: {title: "共享参数", props: {min: 0, max: 10, step: 0.1, unit: "", precision: 2}, state: {value: 2.5}},
   checkbox: {title: "验证状态", props: {label: "已通过实验验证"}, state: {checked: false}},
   input: {title: "补充信息", props: {mode: "text", placeholder: "在这里输入…", required: false, max_length: 500}, state: {value: null}},
+  interactive: {title:"复平面向量实验",props:{source:"",initial_state:{omega:0,sigma:-2,beta:0},bindings:{}},state:{values:{omega:0,sigma:-2,beta:0}}},
 };
 const app = {
   boardId: "board_local", session: null, cards: new Map(), assets: new Map(), info: null,
@@ -40,6 +42,22 @@ $("#sidebar-toggle").addEventListener("click", () => setSidebarHidden(!$("#works
 
 const space = new FreeCanvas($(".canvas-wrapper"), $("#canvas"),
   () => [...app.cards.values()].filter(card => card.lifecycle === "active"), () => app.selected);
+const interactive = new InteractiveCards({
+  getCards:() => app.bindingCards || app.cards,
+  getLiveState:card => {
+    const own = interactive.records.get(card.id);
+    if (card.type === "interactive" && own?.dirty) return {values:own.values};
+    const draft = app.inline.get(card.id);
+    return draft ? {...card.state,[card.type === "checkbox" ? "checked" : "value"]:draft.value} : card.state;
+  },
+  capture:() => location.pathname === "/__capture__",
+  readOnly:card => location.pathname === "/__capture__" || !app.connected || card.locked ||
+    !!(app.editor?.base.id === card.id && app.editor.dirty) || (cardBusy(card.id) && !interactive.isSaving(card.id)),
+  isBusy:id => cardBusy(id),
+  save:(id,values,version,accept) => mutate("edit_card",{card_id:id,expected_content_version:version,changes:{state:{values}}},
+    {cardId:id,onSuccess:data => accept(data.card)}),
+  changed:() => updateSaveStatus(),
+});
 const updateButton = $("#agent-updates-btn");
 updateButton.addEventListener("click", () => {
   if (app.lastUpdated) locate(app.lastUpdated);
@@ -119,7 +137,7 @@ function setConnection(value) {
 }
 
 function updateSaveStatus() {
-  const dirty = app.editor?.dirty || app.inline.size || app.modalDirty;
+  const dirty = app.editor?.dirty || app.inline.size || app.modalDirty || interactive.hasDraft();
   const conflict = app.editor?.dirty && editorStale();
   const value = !app.connected ? "离线 · 已保存内容可能过时" : conflict ? "存在冲突 · 草稿已保留" : app.pending.size ? "操作结果确认中…" : app.lastError ? "保存失败 · 待处理" : dirty ? "有未保存的草稿" : "所有修改已保存";
   $("#save-status").textContent = value;
@@ -266,6 +284,7 @@ function applyCard(card, external = false) {
     if (app.editor.dirty) refreshConflict();
     else openEditor(card, true);
   }
+  interactive.refresh();
 }
 
 function updateCounts() {
@@ -298,11 +317,27 @@ function updateCardDisabled(card) {
   node.classList.toggle("pending", cardBusy(card.id));
   const foot = $(".card-status", node);
   if (foot) foot.textContent = cardBusy(card.id) ? "保存确认中…" : app.inline.has(card.id) ? "草稿未保存" : card.locked ? "已锁定" : "已保存";
+  if (card.type === "interactive") interactive.updateCard(card);
 }
 
 function renderCard(card, flash = false) {
   const old = cardElement(card.id);
   if (!matches(card)) { old?.remove(); updateCounts(); return; }
+  if (old && card.type === "interactive") {
+    Object.assign(old.style,{left:card.layout.x+"px",top:card.layout.y+"px",width:card.layout.w+"px",height:card.layout.h+"px"});
+    $(".card-head h2",old).textContent = card.title;
+    $(".card-head h2",old).title = card.title;
+    $(".card-foot>span",old).textContent = `${TYPES[card.type].label} · ${card.updated_by.display_name} · ${date(card.updated_at)}`;
+    old.setAttribute("aria-label",card.title+"，交互演示");
+    const description = $(".card-description",old);
+    if (description && !card.description) description.remove();
+    else if (description) description.textContent = card.description;
+    else if (card.description) $(".card-body",old).prepend(el("p",{class:"card-description",text:card.description}));
+    const lock = $(".locked-label",old);
+    if (card.locked && !lock) $(".card-head",old).insertBefore(el("span",{class:"locked-label",text:"锁定"}),$(".card-head .icon-button",old));
+    else if (!card.locked) lock?.remove();
+    updateCardDisabled(card); space.layers(); return;
+  }
   const focus = old?.contains(document.activeElement) ? document.activeElement : null;
   const focusKey = focus?.dataset.focusKey;
   const selection = focus && typeof focus.selectionStart === "number" ? [focus.selectionStart, focus.selectionEnd] : null;
@@ -316,12 +351,12 @@ function renderCard(card, flash = false) {
     height: card.layout.height_mode === "fixed" ? card.layout.h + "px" : "auto"});
   node.dataset.heightMode = card.layout.height_mode;
   const handle = el("button", {class: "drag-handle", text: "⠿", title: "拖动卡片；键盘用户可在属性中修改布局", "aria-label": "拖动「" + card.title + "」", data: {editControl: "true"}});
-  handle.addEventListener("pointerdown", event => startDrag(event, card, false));
+  handle.addEventListener("pointerdown", event => startDrag(event, app.cards.get(card.id), false));
   const head = el("header", {class: "card-head"}, handle, el("span", {class: "type-icon", text: type.icon}),
     el("h2", {title: card.title, text: card.title}), card.locked ? el("span", {class: "locked-label", text: "锁定"}) : null,
     el("button", {class: "icon-button", text: "···", "aria-label": "「" + card.title + "」卡片菜单", onClick: () => cardMenu(card.id)}));
   head.addEventListener("pointerdown", event => {
-    if (!event.target.closest("button") || event.target.closest(".drag-handle")) startDrag(event, card, false);
+    if (!event.target.closest("button") || event.target.closest(".drag-handle")) startDrag(event, app.cards.get(card.id), false);
   });
   node.append(head);
   const body = el("div", {class: "card-body"});
@@ -329,7 +364,7 @@ function renderCard(card, flash = false) {
   if (card.type === "text") body.style.fontSize = card.props.font_size + "px";
   node.append(body, el("footer", {class: "card-foot"}, el("span", {text: `${type.label} · ${card.updated_by.display_name} · ${date(card.updated_at)}`, title: card.id + " · v" + card.version}), el("span", {class: "card-status", text: "已保存"})));
   const resize = el("button", {class: "resize-handle", "aria-label": "调整「" + card.title + "」尺寸", title: "调整尺寸", data: {editControl: "true"}});
-  resize.addEventListener("pointerdown", event => startDrag(event, card, true));
+  resize.addEventListener("pointerdown", event => startDrag(event, app.cards.get(card.id), true));
   node.append(resize);
   if (old) old.replaceWith(node); else $("#canvas").append(node);
   updateCardDisabled(card);
@@ -347,6 +382,7 @@ function renderContent(body, card) {
   const p = card.props, s = card.state, draft = app.inline.get(card.id);
   if (card.description) body.append(el("p", {class: "card-description", text: card.description}));
   if (card.type === "text") body.append(p.format === "markdown" ? markdown(s.text) : el("div", {class: "plain-text", text: s.text || "暂无正文，点击编辑添加。"}));
+  else if (card.type === "interactive") interactive.mount(body,card);
   else if (card.type === "slider") {
     const value = draft ? draft.value : s.value;
     const display = el("strong", {text: value});
@@ -355,7 +391,7 @@ function renderContent(body, card) {
     const remember = () => {
       const previous = app.inline.get(card.id);
       app.inline.set(card.id, {value: Number(slider.value), version: previous?.version ?? card.content_version, error: null});
-      display.textContent = slider.value; updateSaveStatus();
+      display.textContent = slider.value; updateSaveStatus(); interactive.refresh();
     };
     slider.addEventListener("input", remember);
     let timer;
@@ -370,7 +406,7 @@ function renderContent(body, card) {
   } else if (card.type === "checkbox") {
     const control = el("input", {type: "checkbox", checked: draft ? draft.value : s.checked,
       data: {editControl: "true", focusKey: "checkbox"}, onChange: event => {
-        app.inline.set(card.id, {value: event.target.checked, version: card.content_version}); commitInline(card.id);
+        app.inline.set(card.id, {value: event.target.checked, version: card.content_version}); interactive.refresh(); commitInline(card.id);
       }});
     body.append(el("label", {class: "check-label"}, control, p.label));
   } else if (card.type === "input") {
@@ -404,7 +440,7 @@ function bindInlineInput(control, card, numeric) {
     const old = app.inline.get(card.id);
     app.inline.set(card.id, {raw: control.value, value: numeric ? (control.value === "" ? null : Number(control.value)) : control.value,
       version: old?.version ?? card.content_version, error: null});
-    updateSaveStatus();
+    updateSaveStatus(); interactive.refresh();
   });
   control.addEventListener("keydown", event => {
     if (event.key === "Enter") { event.preventDefault(); commitInline(card.id); }
@@ -493,6 +529,14 @@ function cardFields(card, editing = false) {
     root.addEventListener("input", () => { clearTimeout(previewTimer); previewTimer = setTimeout(paintPreview, 120); });
     root.addEventListener("change", paintPreview); paintPreview();
   }
+  if (type === "interactive") {
+    root.append(field("演示源码（HTML / CSS / JavaScript）","props.source",p.source,{multiline:true,tall:true,
+      hint:"保存后运行。使用 Board.onChange 接收参数，Board.setState 保存自身参数，Board.rendered 报告绘图就绪。"}),
+      field("当前参数（JSON）","state.values",JSON.stringify(s.values,null,2),{kind:"json",multiline:true}),
+      field("初始参数（JSON）","props.initial_state",JSON.stringify(p.initial_state,null,2),{kind:"json",multiline:true}),
+      field("输入绑定（JSON）","props.bindings",JSON.stringify(p.bindings,null,2),{kind:"json",multiline:true,
+        hint:'示例：{"omega":{"card_id":"卡片ID","path":"/state/value"}}。绑定只读；缺失来源会显示错误。'}));
+  }
   if (["image", "file"].includes(type)) {
     const assets = [...app.assets.values()].filter(asset => type !== "image" || asset.preview_kind === "image");
     const choices = [["", "请选择已添加的资源"], ...assets.map(asset => [asset.id, `${asset.name} · ${asset.mode === "reference" ? "引用" : "副本"}`])];
@@ -536,6 +580,10 @@ function collectFields(root, base) {
       value = input.value === "" ? null : Number(input.value);
       if (value !== null && !Number.isFinite(value)) throw new Error("请输入有效数值。");
     }
+    if (input.dataset.kind === "json") {
+      try { value = JSON.parse(input.value); }
+      catch { throw new Error(input.closest("label").firstChild.textContent+"不是有效JSON。"); }
+    }
     if (path.length === 2) card[path[0]][path[1]] = value;
     else card[path[0]] = value;
   }
@@ -562,6 +610,13 @@ function mergeCard(base, patch) {
 
 async function createCardForm(type, initial = null) {
   if (!app.connected) { toast("当前离线，请等待重新连接。", true); return; }
+  if (type === "interactive" && !initial && !DEFAULTS.interactive.props.source) {
+    try {
+      const response = await fetch("/examples/complex-angle.html");
+      if (!response.ok) throw new Error("演示示例加载失败。");
+      DEFAULTS.interactive.props.source = await response.text();
+    } catch (error) { toast(error.message,true); return; }
+  }
   if (["image", "file"].includes(type)) {
     try { (await allPages("list_assets")).items.forEach(asset => app.assets.set(asset.id, asset)); } catch (error) { toast(error.message, true); }
     if (![...app.assets.values()].some(asset => type !== "image" || asset.preview_kind === "image")) {
@@ -1050,7 +1105,7 @@ document.addEventListener("keydown", event => {
   if (event.key === "/" && !event.target.closest("input,textarea,select") && !$("#modal").open) { event.preventDefault(); $("#search").focus(); }
   if (event.key === "Escape" && !$("#modal").open && app.editor && !event.target.closest("input,textarea")) guardEditor(closeEditor);
 });
-window.addEventListener("beforeunload", event => { if (app.editor?.dirty || app.inline.size || app.pending.size || app.modalDirty) { event.preventDefault(); event.returnValue = ""; } });
+window.addEventListener("beforeunload", event => { if (app.editor?.dirty || app.inline.size || app.pending.size || app.modalDirty || interactive.hasDraft()) { event.preventDefault(); event.returnValue = ""; } });
 window.addEventListener("online", sync);
 window.addEventListener("offline", () => setConnection(false));
 if (location.pathname === "/__capture__") {
