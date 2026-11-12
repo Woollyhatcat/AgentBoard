@@ -26,12 +26,25 @@ const app = {
   pending: new Map(), inline: new Map(), selected: null, query: "", events: [], lastError: null, modalDirty: false,
   typeDefs: new Map(), dragging: null, suppressClickUntil: 0,
 };
+function setSidebarHidden(hidden) {
+  $("#workspace-sidebar").hidden = hidden;
+  document.body.classList.toggle("sidebar-hidden", hidden);
+  const label = hidden ? "展开侧边栏" : "隐藏侧边栏";
+  $("#sidebar-toggle").setAttribute("aria-expanded", String(!hidden));
+  $("#sidebar-toggle").title = label;
+  $("#sidebar-toggle-label").textContent = label;
+  try { localStorage.setItem("agentboard:sidebar:hidden", String(hidden)); } catch { /* Optional storage. */ }
+}
+try { setSidebarHidden(localStorage.getItem("agentboard:sidebar:hidden") === "true"); } catch { setSidebarHidden(false); }
+$("#sidebar-toggle").addEventListener("click", () => setSidebarHidden(!$("#workspace-sidebar").hidden));
+
 const space = new FreeCanvas($(".canvas-wrapper"), $("#canvas"),
   () => [...app.cards.values()].filter(card => card.lifecycle === "active"), () => app.selected);
-const updateButton = el("button", {class: "secondary", text: "查看 Agent 更新", hidden: true,
-  onClick: () => { if (app.lastUpdated) locate(app.lastUpdated); updateButton.hidden = true; }});
-$(".tools").prepend(updateButton);
-$(".tools").append(el("button", {class:"secondary", text:"显示风格", onClick:() => showModal("本机显示风格",space.preferences(),"APPEARANCE")}));
+const updateButton = $("#agent-updates-btn");
+updateButton.addEventListener("click", () => {
+  if (app.lastUpdated) locate(app.lastUpdated);
+  updateButton.disabled = true; updateButton.title = "暂无待查看的 Agent 更新";
+});
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -213,7 +226,7 @@ async function sync() {
       applyCard(event.card_after, true);
       app.events.push(event);
       if (event.actor.kind === "agent") {
-        app.lastUpdated = event.card_id; updateButton.hidden = false;
+        app.lastUpdated = event.card_id; updateButton.disabled = false; updateButton.title = "定位 Agent 最近更新的卡片";
         toast(`Agent ${event.kind === "created" ? "添加" : "更新"}了「${event.card_after.title}」，可点击“查看 Agent 更新”定位。`);
       }
     }
