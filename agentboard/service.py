@@ -120,6 +120,9 @@ class BoardService:
             raise BusinessError("FORBIDDEN", "此管理操作只能由用户执行。")
 
     def call(self, tool, args, actor=None):
+        if tool == "get_board_screenshot":
+            from .screenshot import capture_board
+            return capture_board(self, args, deepcopy(actor or AGENT))
         actor = deepcopy(actor or AGENT)
         identity = actor.get("kind", "") + ":" + actor.get("id", "")
         meta = {"request_id": uid("req")}
@@ -653,6 +656,11 @@ class BoardService:
                 "next_cursor": token, "complete": token is None}
 
     def asset_bytes_for_user(self, asset_id):
+        return self.asset_bytes_for_actor(asset_id, USER)
+
+    def asset_bytes_for_actor(self, asset_id, actor):
         with closing(self.connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
+            self._authorize(self._board(db), actor, "read_asset",
+                            {"board_id": "board_local", "asset_id": asset_id})
             return self._asset_content(db, asset_id)

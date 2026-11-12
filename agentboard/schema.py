@@ -139,6 +139,8 @@ def validate(value, schema, path="", code="VALIDATION_FAILED"):
             fail("数值必须有限。", path, code)
         if value < schema.get("minimum", -math.inf) or value > schema.get("maximum", math.inf):
             fail("数值超出允许范围。", path, code)
+        if value <= schema.get("exclusiveMinimum", -math.inf) or value >= schema.get("exclusiveMaximum", math.inf):
+            fail("数值超出允许范围。", path, code)
 
 
 def decimal6(value, path):
@@ -276,6 +278,14 @@ INPUTS = {
                                          "type": string(40, 1), "title_query": string(120)}, BOARD),
     "read_card": obj(BOARD | {"card_id": ID, "include_deleted": BOOL}, ("board_id", "card_id")),
     "get_board_snapshot": obj(BOARD | PAGE | {"view": enum("summary", "full")}, BOARD),
+    "get_board_screenshot": obj(BOARD | {"view": enum("all", "card", "region"), "card_id": ID,
+        "region": obj({"x": {"type": "number", "minimum": -10000000, "maximum": 10000000},
+                       "y": {"type": "number", "minimum": -10000000, "maximum": 10000000},
+                       "w": {"type": "number", "exclusiveMinimum": 0, "maximum": 20000000},
+                       "h": {"type": "number", "exclusiveMinimum": 0, "maximum": 20000000}}, ("x", "y", "w", "h")),
+        "width": {"type": "integer", "minimum": 640, "maximum": 4096},
+        "height": {"type": "integer", "minimum": 360, "maximum": 4096},
+        "theme": enum("light", "dark")}, BOARD),
     "get_changes": obj(BOARD | PAGE | {"since_revision": REVISION}, ("board_id", "since_revision")),
     "push_card": obj(WRITE | {"card": CREATE_CARD, "anchor_card_id": ID}, ("board_id", "command_id", "card")),
     "edit_card": obj(EDIT_TARGET | {"changes": CHANGES}, ("board_id", "command_id", "card_id", "changes")),
@@ -310,6 +320,7 @@ DESCRIPTIONS = {
     "get_card_list": "按位置读取固定时点的卡片摘要；可筛选回收站。",
     "read_card": "读取完整卡片。资源正文使用 read_asset 单独读取。",
     "get_board_snapshot": "固定 revision 的快照；收齐分页后以此 revision 继续读取变化。",
+    "get_board_screenshot": "获取真实渲染的黑板PNG截图，MCP直接返回图像。view=all概览、card指定card_id、region指定世界坐标区域；返回相机、实际卡片尺寸及分区版本，辅助布局。不改变用户相机或卡片。",
     "get_changes": "读取固定截至版本的完整变更事件。完整消费后继续下一轮。",
     "push_card": "创建卡片；text.props.font_size 支持12～48，省略 layout 自动放置，可用 anchor_card_id 指定邻近卡片。world 布局允许重叠。相同命令重试不重复创建。",
     "edit_card": "局部编辑；可用 expected_content_version / expected_layout_version 分别检查内容与布局，或 expected_version 整卡检查。world 布局需 space。",

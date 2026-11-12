@@ -4,7 +4,7 @@
 
 ## 启动
 
-需要 Python 3.11 或以上；服务端仅使用标准库，前端渲染库已随项目打包。在项目目录执行：
+需要 Python 3.11 或以上；基础服务仅使用标准库，前端渲染库已随项目打包，截图功能有下文列出的可选依赖。在项目目录执行：
 
 ```powershell
 python -m agentboard serve
@@ -32,7 +32,7 @@ python -m agentboard serve --port 8765 --data-dir ./data
 
 ## 连接 Agent
 
-提供 **MCP stdio** 接口，包含规格定义的 16 个工具。以下为支持 `mcpServers` 配置的客户端示例；其他客户端使用相同 command / args 配置，按各自格式填写。
+提供 **MCP stdio** 接口，包含原规格的16个工具与新增黑板截图工具，共17个。以下为支持 `mcpServers` 配置的客户端示例；其他客户端使用相同 command / args 配置，按各自格式填写。
 
 ```json
 {
@@ -73,7 +73,9 @@ MCP 默认自动启动网页，使用 `--port` 可指定网页端口。仅需数
 
 编辑内容传 `expected_content_version`，编辑布局传 `expected_layout_version`，同时修改则同时传两个版本；也可用 `expected_version` 作整卡检查。删除与恢复仍需当前 `expected_version`。每个新写入意图使用新的 `command_id`；网络结果未知时通过 `get_operation_status` 查询，或用**原命令和完全相同的输入**重试。已确定的成功与业务失败均保存回执，不自动清理。
 
-完整工具：`list_boards`、`get_board_info`、`get_card_types`、`get_card_list`、`read_card`、`get_board_snapshot`、`get_changes`、`push_card`、`edit_card`、`delete_card`、`restore_card`、`get_asset_sources`、`import_asset`、`get_asset_info`、`read_asset`、`get_operation_status`。目录包含 JSON Schema 输入、输出与中文用途说明。
+完整工具：`list_boards`、`get_board_info`、`get_card_types`、`get_card_list`、`read_card`、`get_board_snapshot`、`get_board_screenshot`、`get_changes`、`push_card`、`edit_card`、`delete_card`、`restore_card`、`get_asset_sources`、`import_asset`、`get_asset_info`、`read_asset`、`get_operation_status`。目录包含 JSON Schema 输入、输出与中文用途说明。
+
+Agent 布局时可调用 `get_board_screenshot` 获取原生PNG图像、实际卡片尺寸和像素／世界坐标映射。支持整板、单卡与指定区域截图，复用真实网页排版，不改变用户视角。截图依赖可选安装：`python -m pip install -r requirements-screenshot.txt`，使用本机Edge/Chrome；没有浏览器时执行 `python -m playwright install chromium`。当前电脑已安装依赖，可直接使用。旧连接尚无新工具时执行 `python scripts/capture_board.py --view all`，再打开回执的 `data.path`。详细参数、版本检查和依赖说明见 [截图接口](doc/screenshot-interface.md)。
 
 配套的 Agent 使用 skill 位于 [skills/agentboard/SKILL.md](skills/agentboard/SKILL.md)。将 `agentboard` 文件夹复制到用户级 `~/.agents/skills/` 后，可用 `$agentboard` 显式调用，或按其描述自动选用。skill 提供使用指导，MCP 连接仍需按上述方式配置。用户级技能目录与加载方式见 [OpenAI 官方技能文档](https://learn.chatgpt.com/docs/build-skills)。
 

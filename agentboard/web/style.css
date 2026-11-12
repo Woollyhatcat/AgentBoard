@@ -17,15 +17,10 @@ html,body{height:100%;min-width:960px;overflow:hidden}
 .app-shell{height:100vh}
 .topbar{height:64px;padding:0 28px}
 main{height:calc(100vh - 64px);max-width:none;padding:22px 26px 12px;display:flex;flex-direction:column}
-.page-heading{margin-bottom:18px;flex-shrink:0}
-.page-heading h1{font-size:25px;margin:7px 0}
-#board-description{max-height:42px;overflow:auto}
 .board-toolbar{margin-bottom:14px;padding-bottom:12px;flex-shrink:0;justify-content:flex-start;gap:10px;flex-wrap:nowrap}
 .board-toolbar>.primary,.board-toolbar>.secondary,.board-toolbar>.search{height:38px;flex-shrink:0}
 .board-toolbar>.search{flex:1;max-width:360px;min-width:160px}
 .board-toolbar .search input{width:100%;flex:1}
-.board-title{display:flex;align-items:center;gap:16px}
-.board-title .view-label{font-size:11px;font-weight:400;color:var(--muted)}
 .topbar-start{display:flex;align-items:center;gap:20px;min-width:0}
 .sidebar-toggle{display:inline-flex;align-items:center;gap:7px;padding:7px 9px;border:1px solid var(--line);border-radius:6px;font-size:11px;color:var(--muted);white-space:nowrap}
 .sidebar-toggle:hover{background:var(--tint);color:var(--ink)}
@@ -114,3 +109,11 @@ html[data-theme=dark] .canvas-wrapper[data-background=warm]{background-color:#30
 html[data-theme=dark] .banner{background:#3d3524;color:#e8cc91;border-color:#746444}
 html[data-theme=dark] .inspector.has-conflict .inspector-header{background:#302d24}
 @media(prefers-reduced-motion:reduce){.canvas{will-change:auto}}
+
+/* A private screenshot viewport uses exactly the same cards and typography. */
+html:has(.capture-mode),body.capture-mode{min-width:0}
+.capture-mode .rail,.capture-mode .topbar,.capture-mode .board-toolbar,.capture-mode .board-footer,
+.capture-mode .canvas-controls,.capture-mode #inspector,.capture-mode #toasts{display:none!important}
+.capture-mode .app-shell{margin:0;height:100vh}
+.capture-mode main{padding:0;height:100vh}
+.capture-mode .canvas-wrapper{border:0;border-radius:0;min-height:0}

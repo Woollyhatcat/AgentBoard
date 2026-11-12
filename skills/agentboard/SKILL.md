@@ -60,6 +60,17 @@ description: 使用 AgentBoard MCP 读取和维护人与 Agent 共用的持久�
 
 文本默认 `height_mode="auto"` 按内容撑高，最多 720 后内部滚动；长推导可选 `expanded` 完整展开，手动设高用 `fixed`。标题与描述使用纯文本。
 
+## 用截图检查布局
+
+布置或重排黑板时，调用 `get_board_screenshot(board_id=...,view="all")` 查看实际排布；调整后再截图核对遮挡、间距和文字可读性。MCP 返回原生 PNG 图像及元数据。默认1600×1000，支持 width 640～4096、height 360～4096 和 theme="light"|"dark"。这是独立渲染的已保存快照，保留用户当前相机和本机风格。
+
+- 概览中文字太小时，改用 `view="card",card_id=...` 查看单卡，或 `view="region",region={"x":-200,"y":0,"w":1200,"h":800}` 查看世界坐标区域。
+- `cards[].world.h` 是实际渲染高度，可据此为自动高度卡片留出间距；`cards[].pixels` 是图中的像素位置。换算世界坐标：`world_x=(pixel_x-camera.x)/camera.zoom`，y同理。概览为容纳全部卡片可能缩得很小；局部截图更适合检查字号。
+- 截图包含 revision、current_revision、stale 和卡片分区版本。stale=true 时先刷新；布局写入仍使用最新 expected_layout_version。截图反映已保存内容，用户未保存的草稿不在其中。检查 warnings、math_errors 和 body_overflow，区分渲染失败、公式错误与正常内部滚动。
+- 当前连接尚无该工具时，可执行 `python "C:/Tools/AgentBoard/scripts/capture_board.py" --view all`，再用图像查看工具打开 JSON 回执的 `data.path`。自定义数据目录必须传相同 `--data-dir`；重新连接 MCP 可加载新增工具。
+
+截图只读取有权限的黑板，独立后台浏览器不会截取其他窗口。图片和坐标JSON保存在同一数据目录的 screenshots/，不写入卡片或资源。`SCREENSHOT_DEPENDENCY_MISSING`／`SCREENSHOT_BROWSER_UNAVAILABLE` 时按错误 recovery 安装截图依赖或浏览器，恢复后重试。
+
 ## 写入与重试
 
 - 每个新写入意图使用新的 UUID 作为 `command_id`。`edit_card` 改标题／描述／props／state 时传最近读取的 `content_version` 为 `expected_content_version`；改 layout 时传 `layout_version` 为 `expected_layout_version`；两者都改则同时传两个版本。这样用户挪卡片和 Agent 改正文可以合并。

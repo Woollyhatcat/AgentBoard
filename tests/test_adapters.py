@@ -32,7 +32,7 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["error"]["code"], -32600)
         mcp = self.init_mcp()
         catalog = mcp.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["result"]["tools"]
-        self.assertEqual(len(catalog), 16)
+        self.assertEqual(len(catalog), 17)
         self.assertTrue(all("inputSchema" in tool and "outputSchema" in tool for tool in catalog))
         self.assertNotIn("set_card_lock", {tool["name"] for tool in catalog})
         unknown = mcp.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "set_card_lock"}})

@@ -200,8 +200,6 @@ async function sync() {
     const recovering = !app.connected;
     await reconcilePending();
     app.info = await rpc("get_board_info");
-    $("#board-name").textContent = app.info.name;
-    $("#board-description").textContent = app.info.description;
     $("#copy-board").textContent = app.boardId + " ⧉";
     document.title = app.info.name + " · AgentBoard";
     $("#trash-count").textContent = app.info.deleted_card_count;
@@ -273,7 +271,6 @@ function applyCard(card, external = false) {
 function updateCounts() {
   const count = [...app.cards.values()].filter(card => card.lifecycle === "active").length;
   $("#nav-count").textContent = count;
-  $("#card-count").textContent = count;
   const visible = [...app.cards.values()].filter(matches);
   $("#empty").hidden = count !== 0;
   $("#no-results").hidden = !(count > 0 && visible.length === 0);
@@ -1056,5 +1053,9 @@ document.addEventListener("keydown", event => {
 window.addEventListener("beforeunload", event => { if (app.editor?.dirty || app.inline.size || app.pending.size || app.modalDirty) { event.preventDefault(); event.returnValue = ""; } });
 window.addEventListener("online", sync);
 window.addEventListener("offline", () => setConnection(false));
-sync();
-setInterval(sync, 1500);
+if (location.pathname === "/__capture__") {
+  loadCapture();
+} else {
+  sync();
+  setInterval(sync, 1500);
+}

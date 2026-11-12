@@ -1,0 +1,2 @@
+# Optional: MCP screenshots. Reuses installed Edge/Chrome or Playwright Chromium.
+playwright==1.65.1
