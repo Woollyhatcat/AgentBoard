@@ -27,6 +27,63 @@ class AdapterTests(unittest.TestCase):
         mcp.handle({"jsonrpc": "2.0", "method": "notifications/initialized"})
         return mcp
 
+    def modern_request(self, method, **params):
+        return {"jsonrpc":"2.0","id":101,"method":method,"params":{
+            "_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28",
+                     "io.modelcontextprotocol/clientInfo":{"name":"web-test","version":"1"},
+                     "io.modelcontextprotocol/clientCapabilities":{}},**params}}
+
+    def test_modern_discovery_and_tools_without_initialize(self):
+        discovered=MCPConnection(self.service).handle(self.modern_request("server/discover"))
+        self.assertIn("result",discovered)
+        self.assertIn("2026-07-28",discovered["result"]["supportedVersions"])
+        self.assertEqual(discovered["result"]["resultType"],"complete")
+        self.assertEqual(discovered["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],"agentboard")
+        # Requests on fresh connections must work independently of discovery.
+        tools=MCPConnection(self.service).handle(self.modern_request("tools/list"))["result"]
+        self.assertEqual(len(tools["tools"]),17)
+        result=MCPConnection(self.service).handle(self.modern_request("tools/call",name="list_boards",arguments={}))
+        self.assertTrue(result["result"]["structuredContent"]["ok"])
+        self.assertEqual(result["result"]["resultType"],"complete")
+
+    def test_modern_metadata_validation_does_not_unlock_legacy(self):
+        mcp=MCPConnection(self.service)
+        request=self.modern_request("tools/list")
+        request["params"]["_meta"]["io.modelcontextprotocol/protocolVersion"]="2099-01-01"
+        error=mcp.handle(request)["error"]
+        self.assertEqual(error["code"],-32022)
+        self.assertIn("2026-07-28",error["data"]["supported"])
+        request=self.modern_request("tools/list")
+        del request["params"]["_meta"]["io.modelcontextprotocol/clientCapabilities"]
+        self.assertEqual(mcp.handle(request)["error"]["code"],-32602)
+        mcp.handle(self.modern_request("server/discover"))
+        self.assertEqual(mcp.handle({"jsonrpc":"2.0","id":3,"method":"tools/list"})["error"]["code"],-32600)
+
+    def test_modern_stdio_process_and_authorization(self):
+        requests=[self.modern_request("server/discover"),self.modern_request("tools/list"),
+                  self.modern_request("tools/call",name="list_boards",arguments={})]
+        for i,request in enumerate(requests): request["id"]=i+1
+        entry=Path(__file__).resolve().parent.parent/"scripts/mcp_server.py"
+        process=subprocess.run([sys.executable,str(entry),"--no-web","--data-dir",self.temp.name],
+            input="\n".join(json.dumps(r) for r in requests)+"\n",encoding="utf-8",
+            capture_output=True,timeout=15)
+        self.assertEqual(process.returncode,0,process.stderr)
+        replies=[json.loads(line) for line in process.stdout.splitlines()]
+        self.assertEqual(len(replies),3)
+        self.assertTrue(all(r["result"]["resultType"]=="complete" for r in replies))
+        self.assertEqual(len(replies[1]["result"]["tools"]),17)
+        self.assertTrue(replies[2]["result"]["structuredContent"]["ok"])
+        # Modern client metadata conveys protocol context, never authorization.
+        from agentboard.service import USER
+        changed=self.service.call("update_board",{"board_id":"board_local","command_id":"deny-modern",
+            "agent_permissions":{"read":False}},USER)
+        self.assertTrue(changed["ok"],changed)
+        request=self.modern_request("tools/call",name="get_board_info",arguments={"board_id":"board_local"})
+        request["params"]["_meta"]["io.modelcontextprotocol/clientInfo"]["kind"]="user"
+        denied=MCPConnection(self.service).handle(request)["result"]
+        self.assertTrue(denied["isError"])
+        self.assertEqual(denied["structuredContent"]["error"]["code"],"FORBIDDEN")
+
     def test_mcp_lifecycle_catalog_and_error_channels(self):
         mcp = MCPConnection(self.service)
         self.assertEqual(mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["error"]["code"], -32600)

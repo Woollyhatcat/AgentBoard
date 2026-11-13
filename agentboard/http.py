@@ -15,6 +15,7 @@ from .service import USER, LIMITS, dump
 from .schema import BusinessError
 from .runtime import storage_id
 from .interactive import FRAME_CSP, frame_document
+from .shared_mcp import SharedMCP
 
 STATIC = Path(__file__).parent / "web"
 
@@ -33,6 +34,7 @@ def create_server(service, host="127.0.0.1", port=8765):
     if host not in ("127.0.0.1", "localhost", "::1"):
         raise ValueError("首版仅允许绑定本机回环地址。")
     session = secrets.token_urlsafe(32)
+    shared_mcp = SharedMCP(service,port)
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "AgentBoard/0.1"
@@ -75,7 +77,9 @@ def create_server(service, host="127.0.0.1", port=8765):
                 self._json(200, {"session": session, "board_id": "board_local"})
             elif path == "/api/health":
                 self._json(200, {"service": "agentboard", "status": "ready", "board_id": "board_local",
-                                 "storage_id": storage_id(service.data_dir)})
+                                 "storage_id": storage_id(service.data_dir), "mcp_path":"/mcp", "pid":os.getpid()})
+            elif path == "/mcp":
+                self._send(405,"",headers={"Allow":"POST"})
             elif path.startswith("/api/interactive/"):
                 query = parse_qs(urlsplit(self.path).query)
                 key = query.get("key",[""])[0]
@@ -128,8 +132,12 @@ def create_server(service, host="127.0.0.1", port=8765):
                 self._send(200, (STATIC / filename).read_bytes(), mime)
 
         def do_POST(self):
+            if urlsplit(self.path).path == "/mcp":
+                self._mcp_post()
+                return
             if not self._allowed() or not secrets.compare_digest(
                     self.headers.get("X-AgentBoard-Session", ""), session):
+                self._discard_small_body()
                 self._json(403, {"error": "会话或来源无效，请重新连接。"})
                 return
             if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
@@ -156,11 +164,57 @@ def create_server(service, host="127.0.0.1", port=8765):
             except (ValueError, UnicodeDecodeError, RecursionError):
                 self._json(400, {"error": "请求不是有效 JSON。"})
 
+        def _mcp_post(self):
+            # A separate credential never grants the browser's USER privileges.
+            if not self._allowed() or not secrets.compare_digest(
+                    self.headers.get("Authorization", ""), "Bearer "+shared_mcp.token):
+                self._discard_small_body()
+                self._json(401,{"error":"MCP authentication or origin invalid"}); return
+            if self.headers.get("Content-Type","").split(";")[0] != "application/json":
+                self._json(415,{"error":"JSON required"}); return
+            try:
+                length = int(self.headers.get("Content-Length","0"))
+                if not 0 < length <= LIMITS["request_max_bytes"]:
+                    self._json(413,{"error":"Invalid request size"}); return
+                self.connection.settimeout(30)
+                message = json.loads(self.rfile.read(length),parse_constant=reject_constant)
+                params = message.get("params",{}) if isinstance(message,dict) else {}
+                meta = params.get("_meta",{}) if isinstance(params,dict) else {}
+                version = meta.get("io.modelcontextprotocol/protocolVersion") if isinstance(meta,dict) else None
+                header_version = self.headers.get("MCP-Protocol-Version")
+                if ((version is not None and str(version) != header_version) or
+                        (header_version == "2026-07-28" and version is None)):
+                    self._json(400,{"error":"MCP protocol header and metadata mismatch"}); return
+                actor = {"id":unquote(self.headers.get("X-AgentBoard-Agent-Id","local_agent")),
+                         "display_name":unquote(self.headers.get("X-AgentBoard-Agent-Name","Agent")),
+                         "kind":"agent"}
+                if not 0 < len(actor["id"]) <= 128 or not 0 < len(actor["display_name"]) <= 128:
+                    self._json(400,{"error":"Invalid agent label"}); return
+                code,response,headers = shared_mcp.dispatch(message,self.headers.get("Mcp-Session-Id"),actor)
+                self._send(code,"" if response is None else dump(response),headers=headers)
+            except (ValueError,UnicodeDecodeError,RecursionError):
+                self._json(400,{"error":"Invalid JSON request"})
+
+        def _discard_small_body(self):
+            # Windows can reset sockets closed with unread POST bytes, hiding
+            # the intended authentication error from the client.
+            try:
+                length = int(self.headers.get("Content-Length","0"))
+                if 0 < length <= 65536:
+                    self.connection.settimeout(1)
+                    self.rfile.read(length)
+            except (OSError,ValueError):
+                pass
+
         def log_message(self, format, *args):
             # Keep terminal output concise; do not log contents or authentication tokens.
             if args and str(args[1] if len(args) > 1 else "").startswith("5"):
                 super().log_message(format, *args)
 
     server = LoopbackServer((host, port), Handler)
+    shared_mcp.port = server.server_address[1]
+    token_path = service.data_dir / "mcp-token"
+    token_path.write_text(shared_mcp.token,encoding="ascii")
+    token_path.chmod(0o600)
     server.daemon_threads = True
     return server

@@ -34,6 +34,12 @@ python -m agentboard serve --port 8765 --data-dir ./data
 
 提供 **MCP stdio** 接口，包含原规格的16个工具与新增黑板截图工具，共17个。以下为支持 `mcpServers` 配置的客户端示例；其他客户端使用相同 command / args 配置，按各自格式填写。
 
+v0.6起，默认stdio入口是轻量转发器：启动或复用同一数据目录的常驻网页进程，将MCP请求转发至其 `/mcp` 端点。MCP协议处理、工具执行和数据库访问都在该常驻进程中完成，因此Codex与tunnel可沿用原command配置并共享同一后端；每个客户端仍有自己的转发进程。`--no-web`保留独立stdio执行模式，用于测试和无网页场景。
+
+`http://127.0.0.1:8765/mcp` 同时提供JSON响应的Streamable HTTP接口。它只接受本机Host／Origin，并要求独立Bearer凭据，当前凭据位于对应数据目录的 `mcp-token`（后台重启时轮换）。该文件属于密钥，不能上传、写入板书或提交Git；它不是OpenAI隧道API Key，也不授予网页用户管理权。HTTP调用固定使用Agent角色，代理入口的Agent标识仅作为来源标签，非多人认证。旧协议客户端的会话分别隔离，30分钟无活动后失效，最多256个；新版请求独立处理，不依赖连接会话。GET事件流未开放（405），当前工具不声明订阅能力。
+
+升级时先重启本地网页服务，再重启既有stdio入口／隧道MCP子进程。验证 `/api/health` 的pid及mcp_path，并用实际工具调用确认，不能仅以tunnel ready判断。若直接改用HTTP客户端，应独立配置该本机Bearer凭据；保留stdio转发配置则会自动从本机文件读取，无需在Codex或tunnel配置中复制密钥。
+
 ```json
 {
   "mcpServers": {
@@ -79,7 +85,9 @@ Agent 布局时可调用 `get_board_screenshot` 获取原生PNG图像、实际�
 
 配套的 Agent 使用 skill 位于 [skills/agentboard/SKILL.md](skills/agentboard/SKILL.md)。将 `agentboard` 文件夹复制到用户级 `~/.agents/skills/` 后，可用 `$agentboard` 显式调用，或按其描述自动选用。skill 提供使用指导，MCP 连接仍需按上述方式配置。用户级技能目录与加载方式见 [OpenAI 官方技能文档](https://learn.chatgpt.com/docs/build-skills)。
 
-协议适配依据 MCP 官方 [生命周期](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle)、[stdio 传输](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)和 [Tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools) 规范，实现初始化、工具发现、结构化回执和协议／业务错误分离。当前以 `2025-11-25` 为默认协议版本，并支持 `2025-06-18`、`2025-03-26`、`2024-11-05` 协商；规格中提及的其他协议日期未作为本实现兼容承诺。
+协议适配支持两种生命周期：旧客户端使用 `initialize`／`notifications/initialized`，默认 `2025-11-25`，兼容 `2025-06-18`、`2025-03-26`、`2024-11-05`；新版客户端可使用 `2026-07-28` 的无状态 [server/discover](https://modelcontextprotocol.io/specification/2026-07-28/server/discover)、逐请求协议元数据及工具调用。新版请求独立校验版本、clientInfo与clientCapabilities，结果携带resultType和服务身份；客户端元数据不授予用户权限。仅实现本项目声明的tools能力，原有版本冲突、权限与命令回执检查继续适用。
+
+通过 Secure MCP Tunnel 使用本项目时，建议仅运行一个相同profile的客户端实例。旧协议握手可加 `--mcp.stdio-send-initialized-notification`；端口冲突可用 `--health.listen-addr 127.0.0.1:0`。需要代理时显式指定 `--control-plane.http-proxy`。检查 `/health/mcp` 中实际工具发现结果；客户端ready不等于MCP发现成功。更新程序后需重启对应MCP子进程，并在ChatGPT中重试或刷新连接。
 
 ## 当前功能
 

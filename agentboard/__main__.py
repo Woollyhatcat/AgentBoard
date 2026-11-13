@@ -8,6 +8,7 @@ from .mcp import serve_stdio
 from .service import BoardService
 from .service import dump
 from .runtime import ensure_web, stop_web
+from .shared_mcp import serve_shared_stdio
 
 
 def main():
@@ -26,6 +27,10 @@ def main():
         print(dump(status), flush=True)
         if status["status"] == "unavailable":
             raise SystemExit(1)
+        return
+    if args.mode == "mcp" and not args.no_web:
+        serve_shared_stdio(args.data_dir,args.port,
+            {"id":args.agent_id,"kind":"agent","display_name":args.agent_name})
         return
     service = BoardService(args.data_dir)
     if args.mode == "mcp":
