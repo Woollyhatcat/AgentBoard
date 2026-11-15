@@ -2,6 +2,130 @@
 
 人与 Agent 共用的本地持久化黑板。依据 `doc/functional-specification.html` 和 `doc/detailed-functional-specification.html` 开发，当前自由画布、富文本与并行编辑以 [v0.3 补充规格](doc/free-canvas-specification.md) 为准。
 
+## 给 Codex 配置 AgentBoard（Windows）
+
+本节面向下载本项目后，在自己电脑的 Codex 桌面端、CLI 或 IDE 扩展中使用黑板的用户。使用本机 stdio 连接即可，无需配置 tunnel、OAuth 或额外的 OpenAI API Key。Codex 自身的登录与使用额度仍按你的账户配置。
+
+每位用户在自己的电脑运行一份 AgentBoard，拥有自己的黑板数据；下载安装本项目不会连接到发布者的黑板。以下统一以 `C:\Tools\AgentBoard` 为项目目录，请替换为你实际解压或克隆到的目录。保留完整项目文件，不要只复制 `scripts/mcp_server.py`。
+
+### 1. 准备 Python 环境
+
+安装 Python **3.11 或以上**，在 PowerShell 中执行：
+
+```powershell
+Set-Location "C:\Tools\AgentBoard"
+python --version
+python -m venv .venv
+```
+
+后续直接使用 `.venv` 内的解释器，无需激活虚拟环境。基础黑板和 MCP 只依赖 Python 标准库，不需要安装 Node.js，也不需要执行 `pip install .`。
+
+建议安装截图依赖，让 Codex 能查看黑板的真实排版、检查公式与交互图：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-screenshot.txt
+```
+
+截图优先使用本机 Edge／Chrome。如果没有受支持的浏览器，或截图提示浏览器不可用，再安装 Chromium：
+
+```powershell
+.\.venv\Scripts\python.exe -m playwright install chromium
+```
+
+不安装截图依赖仍可使用基础读写工具；`get_board_screenshot` 会返回依赖错误，无法辅助检查布局。
+
+### 2. 添加 Codex MCP 配置
+
+打开用户级配置文件 `%USERPROFILE%\.codex\config.toml`，不存在时创建。保留已有内容，新增下面的表；如果已有 `[mcp_servers.agentboard]`，直接修改该表，不要重复添加。
+
+```toml
+[mcp_servers.agentboard]
+command = "C:/Tools/AgentBoard/.venv/Scripts/python.exe"
+args = [
+  "-u",
+  "C:/Tools/AgentBoard/scripts/mcp_server.py",
+  "--data-dir", "C:/Tools/AgentBoard/data",
+  "--port", "8765",
+  "--agent-id", "codex-local",
+  "--agent-name", "Codex"
+]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+```
+
+将所有 `C:/Tools/AgentBoard` 替换为你的实际目录。TOML 双引号字符串中使用 `/` 可避免 Windows 反斜杠转义问题。解释器和脚本使用绝对路径，因此可以从其他项目调用，不依赖 Codex 的当前工作目录。
+
+如果已安装 Codex CLI，也可以执行以下命令添加连接，与手动配置二选一：
+
+```powershell
+codex mcp add agentboard -- "C:/Tools/AgentBoard/.venv/Scripts/python.exe" -u "C:/Tools/AgentBoard/scripts/mcp_server.py" --data-dir "C:/Tools/AgentBoard/data" --port 8765 --agent-id codex-local --agent-name Codex
+```
+
+CLI 添加后可在配置文件中补充上述两个超时设置。可用 `codex mcp list` 检查配置是否存在；这不代表工具已经成功调用。Codex 使用 `config.toml` 中的 `[mcp_servers.*]`，不要把下文其他 MCP 客户端的 `mcpServers` JSON 直接粘贴进去。
+
+当前官方 OpenAI 文档说明：同一 Codex 主机上的桌面端、CLI 和 IDE 扩展共享 MCP 配置；也可使用受信任项目中的 `.codex/config.toml` 将连接限制到某个项目。这里采用用户级配置，便于在不同项目中使用同一块黑板。参见 [Codex MCP 配置](https://learn.chatgpt.com/docs/extend/mcp#connect-codex-to-an-mcp-server)。
+
+### 3. 安装配套 skill（推荐）
+
+MCP 提供黑板工具，skill 进一步指导 Codex 如何共同讨论、逐步板书、生成交互演示和检查布局。只配置 MCP 不会自动安装 skill。
+
+将本项目的 `skills/agentboard` 文件夹复制到 `%USERPROFILE%\.agents\skills\agentboard`。在项目目录执行：
+
+```powershell
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.agents\skills" | Out-Null
+Copy-Item -LiteralPath ".\skills\agentboard" -Destination "$env:USERPROFILE\.agents\skills\agentboard" -Recurse
+```
+
+如果目标已存在同名 skill，先检查已有内容，再合并更新，避免复制成两层 `agentboard/agentboard`。
+
+**当前 skill 中仍有开发者电脑上的项目绝对路径，需要改成你的路径。** 打开复制后的 `SKILL.md`，将其中的 `C:/Tools/AgentBoard` 全部替换为你的项目目录（本例为 `C:/Tools/AgentBoard`）。这些路径用于启动服务、截图和读取交互卡片文档；只改 MCP 配置不会同时改好它们。保留项目中的 `doc/` 和 `scripts/`，供 skill 引用。
+
+安装完成后可在支持 `$` 调用的 Codex 输入框中使用 `$agentboard`；也可直接说明要使用 AgentBoard。skill 的用户级安装位置及发现方式见 [官方技能文档](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills)。
+
+### 4. 重连并验证
+
+保存配置后重启 Codex，或重新连接该 MCP，再开始一段对话。CLI 用户可用 `/mcp` 查看当前连接。先发送只读验证请求：
+
+```text
+请使用 AgentBoard MCP，先调用 list_boards，再调用 get_board_info。
+告诉我是否连接成功，以及返回的黑板网页地址。先不要创建卡片。
+```
+
+正常情况下 `get_board_info` 返回成功，`web.status` 为 `running`，地址为 [http://127.0.0.1:8765](http://127.0.0.1:8765)。在浏览器打开该地址即可查看黑板。服务会自动启动或复用，聊天结束后继续运行，无需单独开终端常驻。
+
+读写验收可继续发送：
+
+```text
+请在 AgentBoard 创建一张标题为“连接测试”的文本卡片，正文写“Codex 已连接”，
+然后读取这张卡片确认保存成功，并给我黑板链接。
+```
+
+浏览器应出现同一张卡片。安装了截图依赖后，还可以请 Codex 调用 `get_board_screenshot` 检查布局。实际工具回执与浏览器内容一致，才算完成连接验证。
+
+### 常见问题与日常维护
+
+| 现象 | 处理方法 |
+| --- | --- |
+| Codex 中没有 AgentBoard 工具 | 检查配置文件位置、TOML 格式、Python 与脚本绝对路径，然后重连。仅复制 skill 不会建立 MCP 连接。 |
+| 启动失败或找不到 Python | 确认 `.venv/Scripts/python.exe` 已存在，配置中的目录与解压位置一致。项目移动后要同步修改配置和 skill 路径。 |
+| 网页无法打开 | 读取 `get_board_info.web` 的具体错误；查看数据目录 `web.log`。可以执行下方手动启动命令诊断。 |
+| 8765 被占用 | 停止冲突程序，或把 MCP 参数中的 `--port` 改为其他空闲端口，例如 8766；手动启停也必须使用该端口。不要停止不属于本项目的服务。 |
+| 看板为空或与预期内容不一致 | 检查 `--data-dir` 是否指向原来的数据目录。相同机器上要共用一块黑板的入口必须使用相同目录和端口。 |
+| 截图报缺少依赖／浏览器 | 用 MCP 配置中同一个 Python 安装 `requirements-screenshot.txt`，必要时安装 Chromium。 |
+| skill 仍尝试访问发布者目录 | 检查用户级 `SKILL.md` 中的旧绝对路径是否已全部替换。 |
+| 更新项目后仍是旧工具／旧行为 | 重启后台并重连 MCP，使后台和转发进程加载新代码。 |
+
+手动启动或停止后台（示例参数与上面的 MCP 配置一致）：
+
+```powershell
+& "C:\Tools\AgentBoard\.venv\Scripts\python.exe" "C:\Tools\AgentBoard\scripts\start_board.py" --data-dir "C:\Tools\AgentBoard\data" --port 8765
+& "C:\Tools\AgentBoard\.venv\Scripts\python.exe" -m agentboard stop --data-dir "C:\Tools\AgentBoard\data" --port 8765
+```
+
+其中 `-m agentboard stop` 需在项目根目录执行。停止后台不会删除卡片；仍然连接的 MCP 入口可能在后续初始化时再次启动后台。
+
+数据保存在配置的 `data/` 中。升级时保留此目录；备份前停止后台和所有 MCP 入口，再复制整个数据目录。向别人分发项目时使用干净源码包，不要夹带自己的 `data/`、`.venv/`、密钥或本机 Codex 配置。每位接收者按本节重新配置路径并创建自己的数据。
+
 ## 启动
 
 需要 Python 3.11 或以上；基础服务仅使用标准库，前端渲染库已随项目打包，截图功能有下文列出的可选依赖。在项目目录执行：
