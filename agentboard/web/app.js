@@ -27,6 +27,7 @@ const app = {
   revision: 0, connected: false, loaded: false, syncing: false, editor: null,
   pending: new Map(), inline: new Map(), selected: null, query: "", events: [], lastError: null, modalDirty: false,
   typeDefs: new Map(), dragging: null, suppressClickUntil: 0,
+  boards: [], switching: false,
 };
 function setSidebarHidden(hidden) {
   $("#workspace-sidebar").hidden = hidden;
@@ -96,7 +97,7 @@ function blocked(card) { return !app.connected || card.locked || cardBusy(card.i
 async function rpc(tool, args = {}) {
   const response = await fetch("/api/tools/" + tool, {
     method: "POST", headers: {"Content-Type": "application/json", "X-AgentBoard-Session": app.session},
-    body: JSON.stringify({...(tool === "list_boards" ? {} : {board_id: app.boardId}), ...args}),
+    body: JSON.stringify({...(["list_boards","create_board"].includes(tool) ? {} : {board_id: app.boardId}), ...args}),
     signal: AbortSignal.timeout(35000),
   });
   if (!response.ok) {
@@ -129,8 +130,11 @@ function setConnection(value) {
   $("#connection").classList.toggle("offline", !value);
   $("#connection").textContent = value ? "已连接 · 本地服务" : "离线 · 草稿保留中";
   $("#offline-banner").hidden = value;
-  $("#add-btn").disabled = !value;
-  $("#import-btn").disabled = !value;
+  for (const id of ["add-btn","import-btn","settings-btn","trash-btn","activity-btn","first-card-btn","example-btn"]) $("#"+id).disabled = !value || !app.boardId;
+  if (app.boardId) {
+    $("#empty h2").textContent = "从第一张卡片开始";
+    $("#empty p").textContent = "记下目标、放入资料，或用控件表达你的想法。连接 Agent 后，一起继续讨论。";
+  }
   for (const card of app.cards.values()) updateCardDisabled(card);
   if (app.editor) refreshConflict();
   updateSaveStatus();
@@ -146,14 +150,16 @@ function updateSaveStatus() {
 
 async function reconcilePending() {
   for (const [command, pending] of [...app.pending]) {
-    const status = await rpc("get_operation_status", {command_id: command});
+    const statusArgs = {board_id:pending.args.board_id ?? null,command_id:command};
+    if (statusArgs.board_id === null) delete statusArgs.board_id;
+    const status = await rpc("get_operation_status", {...statusArgs,...(pending.tool === "create_board" ? {board_id:undefined} : {})});
     if (status.status === "pending") continue;
     if (status.status === "unknown") {
       // Reuse the original command and input. Never guess with a new command.
       try { await rpc(pending.tool, pending.args); }
       catch (error) { if (!error.business) throw error; }
     }
-    const confirmed = status.status === "unknown" ? await rpc("get_operation_status", {command_id: command}) : status;
+    const confirmed = status.status === "unknown" ? await rpc("get_operation_status", {...statusArgs,...(pending.tool === "create_board" ? {board_id:undefined} : {})}) : status;
     if (confirmed.status === "succeeded" || confirmed.status === "failed") {
       app.pending.delete(command);
       const result = confirmed.result;
@@ -175,8 +181,9 @@ async function reconcilePending() {
 async function mutate(tool, args, {cardId = null, onSuccess = null} = {}) {
   if (!app.connected) throw new Error("当前离线，请保留草稿并等待重新连接。");
   if (cardId && cardBusy(cardId)) throw new Error("此卡片的上一操作仍在确认中。");
+  if (app.switching) throw new Error("正在切换黑板，请稍后操作。");
   if (!cardId && [...app.pending.values()].some(item => item.tool === tool)) throw new Error("同类操作的结果仍待确认，请等待原命令核对完成。");
-  const request = {command_id: crypto.randomUUID(), ...args};
+  const request = {...(tool === "create_board" ? {} : {board_id:app.boardId}),command_id: crypto.randomUUID(), ...args};
   const pending = {tool, args: request, cardId, onSuccess};
   app.pending.set(request.command_id, pending);
   app.lastError = null;
@@ -205,19 +212,37 @@ async function mutate(tool, args, {cardId = null, onSuccess = null} = {}) {
 }
 
 async function sync() {
-  if (app.syncing) return;
+  if (app.syncing || app.switching) return;
   app.syncing = true;
+  app.syncDone = new Promise(resolve => { app.resolveSync = resolve; });
   try {
     if (!app.session || !app.connected) {
       const response = await fetch("/api/session", {signal: AbortSignal.timeout(5000)});
       if (!response.ok) throw new Error("服务连接失败。");
       const session = await response.json();
       app.session = session.session;
-      app.boardId = session.board_id;
+      if (!app.started) {
+        let saved;
+        try { saved = localStorage.getItem("agentboard:current-board"); } catch { /* Optional storage. */ }
+        app.boardId = new URL(location.href).searchParams.get("board_id") || saved || session.board_id;
+        space.switchBoard(app.boardId); app.started = true;
+      }
     }
     const recovering = !app.connected;
     await reconcilePending();
+    app.boards = (await allPages("list_boards")).items;
+    renderBoardNavigation();
+    if (!app.boards.some(board => board.id === app.boardId)) {
+      if (hasBoardDrafts()) {
+        setConnection(false); toast("当前黑板已删除，草稿保留在此页面。请复制需要的内容后再切换。",true); return;
+      }
+      resetBoard(app.boards[0]?.id || null);
+    }
+    if (!app.boardId) {
+      setConnection(true); renderNoBoards(); return;
+    }
     app.info = await rpc("get_board_info");
+    $("#current-board-name").textContent = app.info.name + (app.info.locked ? " · 删除保护" : "");
     $("#copy-board").textContent = app.boardId + " ⧉";
     document.title = app.info.name + " · AgentBoard";
     $("#trash-count").textContent = app.info.deleted_card_count;
@@ -239,6 +264,7 @@ async function sync() {
     }
     const changes = await allPages("get_changes", {since_revision: app.revision});
     for (const event of changes.items) {
+      if (!event.card_after) { app.events.push(event); continue; }
       applyCard(event.card_after, true);
       app.events.push(event);
       if (event.actor.kind === "agent") {
@@ -260,8 +286,63 @@ async function sync() {
     }
   } finally {
     app.syncing = false;
+    app.resolveSync?.();
     updateSaveStatus();
   }
+}
+
+function hasBoardDrafts() {
+  return !!(app.editor?.dirty || app.inline.size || app.modalDirty || interactive.hasDraft() || app.pending.size || app.dragging);
+}
+
+function renderBoardNavigation() {
+  const select = $("#board-select");
+  const options = app.boards.map(board => ({value:board.id,text:board.name+(board.locked ? " · 已保护" : "")}));
+  if (!equal([...select.options].map(option => ({value:option.value,text:option.text})),options)) {
+    select.replaceChildren(...options.map(option => el("option",option)));
+  }
+  select.value = app.boardId || "";
+  select.disabled = !app.boards.length;
+}
+
+function resetBoard(id) {
+  closeEditor();
+  for (const record of interactive.records.values()) { clearTimeout(record.timer); interactive.halt(record); }
+  interactive.records.clear();
+  app.boardId = id; app.cards.clear(); app.assets.clear(); app.inline.clear(); app.events = [];
+  app.info = null; app.loaded = false; app.revision = 0; app.query = ""; app.lastUpdated = null; app.lastError = null;
+  $("#search").value = ""; updateButton.disabled = true;
+  $("#canvas").replaceChildren();
+  space.switchBoard(id || "none");
+  try {
+    if (id) localStorage.setItem("agentboard:current-board",id);
+    else localStorage.removeItem("agentboard:current-board");
+  } catch { /* Optional storage. */ }
+  const url = new URL(location.href);
+  if (id) url.searchParams.set("board_id",id); else url.searchParams.delete("board_id");
+  url.searchParams.delete("card_id"); history.replaceState(null,"",url);
+  renderBoardNavigation(); updateCounts();
+}
+
+function renderNoBoards() {
+  $("#current-board-name").textContent = "尚无黑板";
+  $("#copy-board").textContent = "尚无黑板";
+  $("#add-btn").disabled = true; $("#import-btn").disabled = true;
+  $("#settings-btn").disabled = true; $("#example-btn").disabled = true; $("#first-card-btn").disabled = true;
+  $("#empty h2").textContent = "从新建一块黑板开始";
+  $("#empty p").textContent = "在侧边栏点击“新建黑板”，创建独立的讨论空间。";
+}
+
+async function switchBoard(id) {
+  if (id === app.boardId) return true;
+  if (hasBoardDrafts()) { toast("请先保存或取消当前草稿，并等待操作确认后再切换黑板。",true); renderBoardNavigation(); return false; }
+  app.switching = true;
+  try {
+    if (app.syncing) await app.syncDone;
+    if (hasBoardDrafts()) { toast("仍有未保存的操作，请先处理后切换。",true); return false; }
+    resetBoard(id); closeModal();
+  } finally { app.switching = false; }
+  await sync(); return true;
 }
 
 async function loadRecentEvents() {
@@ -887,10 +968,11 @@ async function trashDialog(highlight = null) {
 async function activityDialog() {
   await loadRecentEvents();
   const root = el("div", {}, el("p", {class: "dialog-description", text: "最近 50 次已保存的卡片变更。"}));
-  const labels = {created: "添加", updated: "修改", deleted: "删除", restored: "恢复", locked: "锁定", unlocked: "解锁"};
+  const labels = {created: "添加", updated: "修改", deleted: "删除", restored: "恢复", locked: "锁定", unlocked: "解锁",
+    rename_board:"重命名黑板",delete_board:"删除黑板",set_board_lock:"更改删除保护",settings_updated:"修改看板设置"};
   for (const event of [...app.events].reverse()) root.append(el("div", {class: "list-item"}, el("div", {},
-    el("strong", {text: `${event.actor.display_name} ${labels[event.kind]}了「${event.card_after.title}」`}), el("p", {text: `${date(event.occurred_at)} · revision ${event.revision}`})),
-    el("button", {class: "secondary", text: "定位", onClick: () => { closeModal(); locate(event.card_id); }})));
+    el("strong", {text: `${event.actor.display_name} ${labels[event.kind] || event.kind}${event.card_after ? "了「"+event.card_after.title+"」" : ""}`}), el("p", {text: `${date(event.occurred_at)} · revision ${event.revision}`})),
+    event.card_id ? el("button", {class: "secondary", text: "定位", onClick: () => { closeModal(); locate(event.card_id); }}) : null));
   if (!app.events.length) root.append(el("p", {class: "dialog-description", text: "还没有卡片变更，添加第一张卡片后会出现在这里。"}));
   showModal("最近变更", root, "RECENT ACTIVITY");
 }
@@ -990,6 +1072,74 @@ async function importDialog(onImported = null) {
   root.append(tabs, content, errorBox); showModal("添加图片或文件", root, "IMPORT ASSETS"); upload();
 }
 
+function boardNameDialog(mode, board = null) {
+  if (hasBoardDrafts()) { toast("请先保存或取消当前草稿，并等待操作确认。",true); return; }
+  const titles = {create:"新建黑板",rename:"重命名黑板",duplicate:"复制黑板副本"};
+  const form = el("form"), errorBox = el("p",{class:"field-error",role:"alert"});
+  const defaultName = mode === "duplicate" ? (board.name.slice(0,76)+" 副本") : board?.name || "新黑板";
+  const name = field("黑板名称","name",defaultName);
+  const submit = el("button",{class:"primary",type:"submit",text:titles[mode]});
+  form.append(name,el("p",{class:"dialog-description",text:mode === "duplicate" ?
+    "复制所有卡片与资源记录，保留内部绑定、回收站及删除保护。独立副本自动保存；受控文件引用仍读取同一个原文件。" : "修改即时保存，不需要手动保存整块黑板。"}),errorBox,submit);
+  let busy = false;
+  form.addEventListener("submit",async event => {
+    event.preventDefault(); if (busy) return;
+    busy = true; submit.disabled = true; errorBox.textContent = "";
+    try {
+      const value = $('[name="name"]',form).value.trim();
+      if (!value || value.length > 80) throw new Error("名称需为1～80个字符。");
+      const tool = {create:"create_board",rename:"rename_board",duplicate:"duplicate_board"}[mode];
+      const data = await mutate(tool,{name:value,...(board ? {board_id:board.id} : {}),
+        ...(mode === "rename" ? {expected_version:board.version} : {})});
+      busy = false;
+      closeModal();
+      app.boards = (await allPages("list_boards")).items; renderBoardNavigation();
+      if (mode !== "rename") await switchBoard(data.board.id); else await sync();
+      toast(titles[mode]+"成功，已自动保存。");
+    } catch (error) { errorBox.textContent = describeError(error); }
+    finally { busy = false; submit.disabled = false; }
+  });
+  showModal(titles[mode],form,"MANAGE BOARDS",() => !busy);
+  $('[name="name"]',form).select();
+}
+
+async function manageBoardsDialog() {
+  if (hasBoardDrafts()) { toast("请先保存或取消当前草稿，并等待操作确认。",true); return; }
+  const root = el("div"), rows = el("div"), errorBox = el("p",{class:"field-error",role:"alert"});
+  let busy = false;
+  const load = async () => {
+    app.boards = (await allPages("list_boards")).items; renderBoardNavigation(); rows.replaceChildren();
+    for (const board of app.boards) {
+      const run = async action => {
+        if (busy) return; busy = true; errorBox.textContent = "";
+        $$("button",rows).forEach(button => { button.disabled = true; });
+        try { await action(); }
+        catch (error) { errorBox.textContent = describeError(error); }
+        finally { busy = false; if (rows.isConnected) await load(); }
+      };
+      const actions = el("div",{class:"board-management-actions"},
+        el("button",{class:"secondary",text:"重命名",onClick:() => boardNameDialog("rename",board)}),
+        el("button",{class:"secondary",text:"复制副本",onClick:() => boardNameDialog("duplicate",board)}),
+        el("button",{class:"secondary",text:board.locked ? "解除删除保护" : "锁定黑板",onClick:() => run(async () => {
+          await mutate("set_board_lock",{board_id:board.id,expected_version:board.version,locked:!board.locked});
+          toast(board.locked ? "删除保护已解除。" : "删除保护已开启，用户与 Agent 均不能直接删除整块黑板。");
+        })}),
+        el("button",{class:"secondary danger",text:"删除",disabled:board.locked,title:board.locked ? "请先解除删除保护" : "删除整块黑板",onClick:() => run(async () => {
+          if (!confirm(`删除黑板「${board.name}」及其所有卡片？黑板将从列表移除，界面暂不提供恢复入口。`)) return;
+          await mutate("delete_board",{board_id:board.id,expected_version:board.version});
+          await sync(); toast("黑板已删除。");
+        })}));
+      rows.append(el("section",{class:"board-management-row"},el("strong",{text:board.name+(board.id === app.boardId ? " · 当前" : "")}),
+        el("p",{class:"board-management-id",text:board.id}),el("p",{class:"dialog-description",text:board.locked ? "已开启删除保护 · 可继续编辑，只有用户可解锁" : "未开启删除保护"}),actions));
+    }
+    if (!app.boards.length) rows.append(el("p",{text:"尚无黑板，点击新建开始。"}));
+  };
+  root.append(el("p",{class:"dialog-description",text:"每块黑板独立自动保存。锁定只保护整块黑板不被删除，不阻止日常编辑。"}),
+    el("button",{class:"primary",text:"＋ 新建黑板",onClick:() => boardNameDialog("create")}),rows,errorBox);
+  showModal("管理黑板",root,"MANAGE BOARDS",() => !busy);
+  await load();
+}
+
 async function settingsDialog() {
   const form = el("form"), errorBox = el("p", {class: "field-error", role: "alert"});
   const info = await rpc("get_board_info");
@@ -1009,10 +1159,13 @@ async function settingsDialog() {
   });
   const rootList = el("div"), rootPath = field("本地目录绝对路径", "path", "", {hint: "仅授权你希望 Agent 能访问的目录；目录外文件不会开放。"}), rootLabel = field("目录显示名称", "label", "工作资料");
   const loadRoots = async () => {
-    const {roots} = await rpc("get_asset_sources"); rootList.replaceChildren();
-    for (const root of roots) rootList.append(el("div", {class: "root-item"}, el("span", {text: root.label}), el("button", {type: "button", text: "撤销授权", onClick: async () => {
+    const {roots,default_workspace} = await rpc("get_asset_sources"); rootList.replaceChildren();
+    rootList.append(el("p",{class:"dialog-description",text:"应用级授权，所有黑板共用。首次启动默认授权项目 workspace："+default_workspace+"。取消后不会在重启时自动恢复；仅可通过资源接口读取，不授予执行文件或写入目录的权限。"}));
+    if (!roots.length) rootList.append(el("p",{text:"当前没有已授权目录。"}));
+    for (const root of roots) rootList.append(el("div", {class: "root-item"}, el("div",{},el("strong", {text: root.label}),el("p",{class:"root-path",text:root.path})), el("button", {type: "button", text: "取消授权", onClick: async event => {
       if (!confirm("撤销「" + root.label + "」？此目录下的文件引用将不可读取；已导入副本不受影响。")) return;
-      try { await mutate("revoke_root", {root_id: root.root_id}); await loadRoots(); toast("目录授权已撤销。"); } catch (error) { errorBox.textContent = error.message; }
+      event.target.disabled = true;
+      try { await mutate("revoke_root", {root_id: root.root_id}); await loadRoots(); toast("目录授权已撤销。"); } catch (error) { errorBox.textContent = error.message; event.target.disabled = false; }
     }})));
   };
   const rootForm = el("form", {}, rootPath, rootLabel, el("button", {type: "submit", class: "secondary", text: "授权此目录"}));
@@ -1101,6 +1254,9 @@ $("#activity-btn").addEventListener("click", activityDialog);
 $("#settings-btn").addEventListener("click", () => settingsDialog().catch(error => toast(error.message, true)));
 $("#connect-btn").addEventListener("click", connectionDialog);
 $("#board-nav").addEventListener("click", () => guardEditor(closeEditor));
+$("#board-select").addEventListener("change",event => switchBoard(event.target.value).catch(error => toast(error.message,true)));
+$("#new-board-btn").addEventListener("click",() => boardNameDialog("create"));
+$("#manage-boards-btn").addEventListener("click",() => manageBoardsDialog().catch(error => toast(error.message,true)));
 document.addEventListener("keydown", event => {
   if (event.key === "/" && !event.target.closest("input,textarea,select") && !$("#modal").open) { event.preventDefault(); $("#search").focus(); }
   if (event.key === "Escape" && !$("#modal").open && app.editor && !event.target.closest("input,textarea")) guardEditor(closeEditor);

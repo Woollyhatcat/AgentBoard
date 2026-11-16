@@ -19,6 +19,11 @@
   <aside class="rail" id="workspace-sidebar" aria-label="工作空间侧边栏">
     <a class="brand" href="/" aria-label="AgentBoard 首页"><span class="brand-icon">a<span>·</span></span> AgentBoard<span class="brand-dot">.</span></a>
     <div class="workspace-label">个人工作空间 <span>LOCAL</span></div>
+    <section class="board-navigation" aria-label="黑板管理">
+      <label for="board-select">当前黑板</label>
+      <select id="board-select" aria-label="切换黑板"></select>
+      <div class="board-nav-actions"><button class="secondary" id="new-board-btn">＋ 新建黑板</button><button class="secondary" id="manage-boards-btn">管理黑板</button></div>
+    </section>
     <nav aria-label="工作区导航">
       <button class="nav-item active" id="board-nav"><span>▦</span> 共享黑板 <span class="nav-count" id="nav-count">0</span></button>
       <button class="nav-item" id="activity-btn"><span>◷</span> 最近变更</button>
@@ -29,7 +34,7 @@
     <div class="rail-bottom"><button class="nav-item" id="settings-btn"><span>⚙</span> 看板设置</button><div class="profile"><span class="avatar">我</span><div>本地工作空间<small>数据保存在这台电脑上</small></div><span class="online-dot"></span></div></div>
   </aside>
   <div class="app-shell">
-    <header class="topbar"><div class="topbar-start"><button id="sidebar-toggle" class="sidebar-toggle" aria-controls="workspace-sidebar" aria-expanded="true" title="隐藏侧边栏"><span aria-hidden="true">☰</span><span id="sidebar-toggle-label">隐藏侧边栏</span></button><div class="breadcrumb">工作空间 <span>/</span> <b>共享黑板</b></div></div><div class="top-status"><span id="connection" class="status">连接中…</span><span class="divider"></span><button id="copy-board" class="id-button" title="复制看板标识">board_local ⧉</button></div></header>
+    <header class="topbar"><div class="topbar-start"><button id="sidebar-toggle" class="sidebar-toggle" aria-controls="workspace-sidebar" aria-expanded="true" title="隐藏侧边栏"><span aria-hidden="true">☰</span><span id="sidebar-toggle-label">隐藏侧边栏</span></button><div class="breadcrumb">工作空间 <span>/</span> <b id="current-board-name">共享黑板</b></div></div><div class="top-status"><span id="connection" class="status">连接中…</span><span class="divider"></span><button id="copy-board" class="id-button" title="复制看板标识">board_local ⧉</button></div></header>
     <main>
       <div class="board-toolbar" aria-label="看板工具栏"><button class="primary" id="add-btn"><span>＋</span> 添加卡片</button><button class="secondary" id="agent-updates-btn" disabled title="暂无待查看的 Agent 更新">查看 Agent 更新</button><label class="search"><span>⌕</span><input id="search" type="search" aria-label="搜索标题或完整卡片标识" placeholder="搜索标题或卡片标识"><kbd>/</kbd></label></div>
       <div id="offline-banner" class="banner warning" hidden>连接已断开。当前草稿仍在此页面中，恢复连接后将先核对未确认操作。</div>

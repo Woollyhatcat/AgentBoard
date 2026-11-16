@@ -21,6 +21,18 @@ class FreeCanvas {
   store() {
     try { localStorage.setItem(this.key, JSON.stringify(this.camera)); } catch { /* Private browsing. */ }
   }
+  switchBoard(id) {
+    this.store();
+    this.key = `agentboard:${id}:camera:v2`;
+    this.camera = {x:70,y:50,zoom:1}; this.ready = false; this.restored = false; this.userMoved = false;
+    try {
+      const saved = JSON.parse(localStorage.getItem(this.key));
+      if (saved && [saved.x,saved.y,saved.zoom].every(Number.isFinite) && saved.zoom >= .1 && saved.zoom <= 4) {
+        this.camera = saved; this.restored = true;
+      }
+    } catch { /* Optional local storage. */ }
+    this.paint();
+  }
   applyPrefs() {
     const root = document.documentElement;
     root.dataset.theme = this.prefs.theme === "dark" ? "dark" : "light";

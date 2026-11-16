@@ -125,7 +125,7 @@ def _render(service, payload, actor):
                     asset_id = path.rsplit("/",1)[1]
                     try:
                         if asset_id not in resources:
-                            resources[asset_id] = service.asset_bytes_for_actor(asset_id,actor)
+                            resources[asset_id] = service.asset_bytes_for_actor(asset_id,actor,payload["board"]["id"])
                         asset, content = resources[asset_id]
                         if asset["preview_kind"] == "image":
                             route.fulfill(status=200,content_type=asset["mime_type"],body=content); return

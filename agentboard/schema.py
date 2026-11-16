@@ -323,6 +323,10 @@ PERMISSIONS = obj({k: BOOL for k in ("read", "create", "edit", "delete", "restor
 
 INPUTS = {
     "list_boards": obj(PAGE),
+    "create_board": obj({"command_id": COMMAND, "name": string(80, 1), "description": string()}, ("command_id", "name")),
+    "rename_board": obj(WRITE | {"expected_version": VERSION, "name": string(80, 1)}, tuple(WRITE) + ("expected_version", "name")),
+    "duplicate_board": obj(WRITE | {"name": string(80, 1)}, tuple(WRITE) + ("name",)),
+    "delete_board": obj(WRITE | {"expected_version": VERSION}, tuple(WRITE) + ("expected_version",)),
     "get_board_info": obj(BOARD, BOARD),
     "get_card_types": obj(BOARD | {"type": string(40, 1)}, BOARD),
     "get_card_list": obj(BOARD | PAGE | {"lifecycle": enum("active", "deleted"),
@@ -349,9 +353,10 @@ INPUTS = {
     "read_asset": obj(BOARD | {"asset_id": ID, "format": enum("text", "bytes"),
                                "resource_version": ID, "cursor": ID},
                       ("board_id", "asset_id", "format")),
-    "get_operation_status": obj(BOARD | {"command_id": COMMAND}, ("board_id", "command_id")),
+    "get_operation_status": obj(BOARD | {"command_id": COMMAND}, ("command_id",)),
 }
 USER_INPUTS = {
+    "set_board_lock": obj(WRITE | {"expected_version": VERSION, "locked": BOOL}, tuple(WRITE) + ("expected_version", "locked")),
     "upload_asset": obj(WRITE | {"name": string(255, 1), "data_base64": string(27962028)},
                         tuple(WRITE) + ("name", "data_base64")),
     "set_card_lock": obj(TARGET | {"locked": BOOL}, tuple(TARGET) + ("locked",)),
@@ -363,9 +368,14 @@ USER_INPUTS = {
     "list_assets": obj(BOARD | PAGE, BOARD),
 }
 WRITES = {"push_card", "edit_card", "delete_card", "restore_card", "import_asset",
-          "set_card_lock", "update_board", "grant_root", "revoke_root", "upload_asset"}
+          "set_card_lock", "update_board", "grant_root", "revoke_root", "upload_asset",
+          "create_board", "rename_board", "duplicate_board", "delete_board", "set_board_lock"}
 DESCRIPTIONS = {
-    "list_boards": "列出当前身份可访问的看板。首版只有一块看板。",
+    "list_boards": "分页列出当前身份可访问的活动黑板及删除保护、版本、权限；多黑板时先确认目标标识。",
+    "create_board": "创建并自动保存一块独立空黑板，返回新标识；无需board_id，同一command_id重试不重复创建。",
+    "rename_board": "按黑板expected_version重命名；不修改卡片内容。",
+    "duplicate_board": "将黑板复制为独立副本；重建卡片与资源标识及内部绑定，不共享后续编辑。受控文件引用仍指向原授权文件。",
+    "delete_board": "按黑板expected_version软删除整块黑板；已锁定黑板拒绝删除，只有用户可解除保护。请仅在用户明确要求删除整块黑板时使用。",
     "get_board_info": "读取看板标识、权限、类型与服务限制。",
     "get_card_types": "发现七类卡片的 JSON Schema、默认值及交叉字段约束，包括可生成的interactive交互演示。",
     "get_card_list": "按位置读取固定时点的卡片摘要；可筛选回收站。",
@@ -397,6 +407,6 @@ def tool_catalog():
     return [{"name": name, "description": DESCRIPTIONS[name],
              "inputSchema": {"$schema": DIALECT} | schema, "outputSchema": envelope,
              "annotations": {"readOnlyHint": name not in WRITES,
-                             "destructiveHint": name == "delete_card",
+                             "destructiveHint": name in ("delete_card", "delete_board"),
                              "idempotentHint": True, "openWorldHint": False}}
             for name, schema in INPUTS.items()]

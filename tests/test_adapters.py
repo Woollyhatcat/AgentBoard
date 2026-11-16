@@ -41,7 +41,7 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(discovered["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],"agentboard")
         # Requests on fresh connections must work independently of discovery.
         tools=MCPConnection(self.service).handle(self.modern_request("tools/list"))["result"]
-        self.assertEqual(len(tools["tools"]),17)
+        self.assertEqual(len(tools["tools"]),21)
         result=MCPConnection(self.service).handle(self.modern_request("tools/call",name="list_boards",arguments={}))
         self.assertTrue(result["result"]["structuredContent"]["ok"])
         self.assertEqual(result["result"]["resultType"],"complete")
@@ -71,7 +71,7 @@ class AdapterTests(unittest.TestCase):
         replies=[json.loads(line) for line in process.stdout.splitlines()]
         self.assertEqual(len(replies),3)
         self.assertTrue(all(r["result"]["resultType"]=="complete" for r in replies))
-        self.assertEqual(len(replies[1]["result"]["tools"]),17)
+        self.assertEqual(len(replies[1]["result"]["tools"]),21)
         self.assertTrue(replies[2]["result"]["structuredContent"]["ok"])
         # Modern client metadata conveys protocol context, never authorization.
         from agentboard.service import USER
@@ -89,7 +89,7 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["error"]["code"], -32600)
         mcp = self.init_mcp()
         catalog = mcp.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["result"]["tools"]
-        self.assertEqual(len(catalog), 17)
+        self.assertEqual(len(catalog), 21)
         self.assertTrue(all("inputSchema" in tool and "outputSchema" in tool for tool in catalog))
         self.assertNotIn("set_card_lock", {tool["name"] for tool in catalog})
         unknown = mcp.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "set_card_lock"}})

@@ -1,6 +1,6 @@
 [project]
 name = "agentboard"
-version = "0.1.0"
+version = "0.7.0"
 description = "人与 Agent 共用的本地持久化黑板"
 requires-python = ">=3.11"
 dependencies = []

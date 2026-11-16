@@ -77,3 +77,29 @@ def install_write_guard(db):
             THEN RAISE(ABORT,'AgentBoard versions upgraded; reconnect MCP') END;
         END;
     """)
+
+
+def migrate_boards(db, database):
+    """Preserve the original board and scope revision keys to each board."""
+    columns = {row[1] for row in db.execute("PRAGMA table_info(events)")}
+    if "board_id" not in columns:
+        if db.execute("SELECT 1 FROM events LIMIT 1").fetchone():
+            backups = Path(database).parent / "backups"
+            backups.mkdir(exist_ok=True)
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+            with closing(sqlite3.connect(database)) as source, closing(sqlite3.connect(
+                    backups / f"before-multiboard-{stamp}.sqlite3")) as target:
+                source.backup(target)
+        db.execute("ALTER TABLE events RENAME TO single_board_events")
+        db.execute("CREATE TABLE events (board_id TEXT NOT NULL, revision INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(board_id,revision))")
+        db.execute("INSERT INTO events SELECT 'board_local',revision,body FROM single_board_events")
+        db.execute("DROP TABLE single_board_events")
+    for row in db.execute("SELECT id,body FROM board").fetchall():
+        board = json.loads(row["body"])
+        board.setdefault("version", board["revision"] + 1)
+        board.setdefault("locked", False)
+        board.setdefault("lifecycle", "active")
+        board.setdefault("deleted_at", None)
+        db.execute("UPDATE board SET body=? WHERE id=?", (json.dumps(board,ensure_ascii=False),row["id"]))
+    db.execute("CREATE INDEX IF NOT EXISTS cards_by_board ON cards(json_extract(body,'$.board_id'))")
+    db.execute("CREATE INDEX IF NOT EXISTS assets_by_board ON assets(json_extract(body,'$.board_id'))")

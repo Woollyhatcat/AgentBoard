@@ -156,7 +156,7 @@ python -m agentboard serve --port 8765 --data-dir ./data
 
 ## 连接 Agent
 
-提供 **MCP stdio** 接口，包含原规格的16个工具与新增黑板截图工具，共17个。以下为支持 `mcpServers` 配置的客户端示例；其他客户端使用相同 command / args 配置，按各自格式填写。
+提供 **MCP stdio** 接口，包含卡片、资源、截图与黑板管理，共21个工具。以下为支持 `mcpServers` 配置的客户端示例；其他客户端使用相同 command / args 配置，按各自格式填写。
 
 v0.6起，默认stdio入口是轻量转发器：启动或复用同一数据目录的常驻网页进程，将MCP请求转发至其 `/mcp` 端点。MCP协议处理、工具执行和数据库访问都在该常驻进程中完成，因此Codex与tunnel可沿用原command配置并共享同一后端；每个客户端仍有自己的转发进程。`--no-web`保留独立stdio执行模式，用于测试和无网页场景。
 
@@ -203,7 +203,7 @@ MCP 默认自动启动网页，使用 `--port` 可指定网页端口。仅需数
 
 编辑内容传 `expected_content_version`，编辑布局传 `expected_layout_version`，同时修改则同时传两个版本；也可用 `expected_version` 作整卡检查。删除与恢复仍需当前 `expected_version`。每个新写入意图使用新的 `command_id`；网络结果未知时通过 `get_operation_status` 查询，或用**原命令和完全相同的输入**重试。已确定的成功与业务失败均保存回执，不自动清理。
 
-完整工具：`list_boards`、`get_board_info`、`get_card_types`、`get_card_list`、`read_card`、`get_board_snapshot`、`get_board_screenshot`、`get_changes`、`push_card`、`edit_card`、`delete_card`、`restore_card`、`get_asset_sources`、`import_asset`、`get_asset_info`、`read_asset`、`get_operation_status`。目录包含 JSON Schema 输入、输出与中文用途说明。
+完整工具：`list_boards`、`create_board`、`rename_board`、`duplicate_board`、`delete_board`、`get_board_info`、`get_card_types`、`get_card_list`、`read_card`、`get_board_snapshot`、`get_board_screenshot`、`get_changes`、`push_card`、`edit_card`、`delete_card`、`restore_card`、`get_asset_sources`、`import_asset`、`get_asset_info`、`read_asset`、`get_operation_status`。目录包含 JSON Schema 输入、输出与中文用途说明。
 
 Agent 布局时可调用 `get_board_screenshot` 获取原生PNG图像、实际卡片尺寸和像素／世界坐标映射。支持整板、单卡与指定区域截图，复用真实网页排版，不改变用户视角。截图依赖可选安装：`python -m pip install -r requirements-screenshot.txt`，使用本机Edge/Chrome；没有浏览器时执行 `python -m playwright install chromium`。当前电脑已安装依赖，可直接使用。旧连接尚无新工具时执行 `python scripts/capture_board.py --view all`，再打开回执的 `data.path`。详细参数、版本检查和依赖说明见 [截图接口](doc/screenshot-interface.md)。
 
@@ -215,6 +215,7 @@ Agent 布局时可调用 `get_board_screenshot` 获取原生PNG图像、实际�
 
 ## 当前功能
 
+- 多黑板管理：侧边栏切换、新建、重命名、复制副本、整板软删除和删除保护；所有写入自动保存。
 - 文本（Markdown 表格、嵌套列表、任务列表、代码块与 LaTeX）、图片、文件、滑条、勾选框、文本／数值输入。
 - 通用交互卡片：Agent通过MCP生成HTML/CSS/JavaScript数学演示，卡内控件即时重绘并保存参数，可只读绑定其他卡片；自带复平面向量实验、停止／重置／重新运行和截图就绪检查。接口见 [交互卡片文档](doc/interactive-cards.md)。
 - 文本源码编辑与实时预览；共享字号 12～48（默认 16），MCP 可通过 `props.font_size` 创建／修改。自动高度、完整展开与手动固定高度。
@@ -230,6 +231,10 @@ Agent 布局时可调用 `get_board_screenshot` 获取原生PNG图像、实际�
 - 网页每 1.5 秒自动核对变化，保留本页草稿并展示外部版本；断线后先核对未确认命令。
 
 ## 资源和访问边界
+
+首次启动或升级到v0.7时，自动创建并授权**项目根目录下的 `workspace/`**。这是资源读取的默认工作目录，与 `--data-dir` 的位置无关，不会授权整个项目。文件放入该目录后可通过 `get_asset_sources` 返回的逻辑标识和相对路径导入／引用。`workspace/` 中的用户文件不进入Git。
+
+「看板设置 → 已授权资源目录」列出目录名称、实际路径及取消授权按钮，也可添加其他目录。授权为应用级，所有黑板共用；用户取消后不会在重启或新建黑板时自动恢复，需要用户重新授权。实际路径仅在用户管理界面显示，MCP只获取逻辑标识。默认授权不提供MCP文件写入或命令执行能力。
 
 网页只监听 `127.0.0.1`。浏览器写请求检查 Host、Origin 和本次服务会话令牌。用户身份由 HTTP 适配器生成，Agent 身份由本地 MCP 启动配置生成，工具参数不能自报身份。首版面向可信本机用户与其启动的 Agent，拥有此电脑文件访问权的其他进程不属于隔离边界；当前不提供公网部署、远程认证或多用户账户。
 
@@ -258,6 +263,25 @@ Markdown、公式和清洗库随项目本地提供，无需运行时 CDN；版�
 
 ## 数据与版本管理
 
+### 多黑板与自动保存（v0.7）
+
+侧边栏的「新建黑板」创建独立空间，下拉框切换当前黑板，「管理黑板」提供重命名、复制副本、锁定／解除保护和删除。浏览器记住上次选择，每块黑板单独保存相机。存在未保存草稿、未确认写入或拖动操作时先保留当前黑板，处理完后再切换；不同浏览器标签可以查看不同黑板。
+
+卡片和管理操作沿用SQLite事务自动保存，界面底部显示保存状态，无需额外点击“保存黑板”。卡片、资源记录、卡片回收站、版本与增量按黑板隔离，授权目录共用。Agent使用 `list_boards` 选择目标，不应假定始终使用 `board_local`；用户当前浏览器选择不自动改变Agent的目标。
+
+| MCP方法 | 输入与行为 |
+| --- | --- |
+| `create_board` | `name`、`command_id`，可选`description`；不传`board_id`，返回新黑板。查询其操作回执时同样不传`board_id`。 |
+| `rename_board` | `board_id`、`name`、`expected_version`、`command_id`，使用`get_board_info.version`。 |
+| `duplicate_board` | `board_id`、副本`name`、`command_id`；事务中复制全部卡片（含回收站）、资源记录、卡片锁定和黑板权限／删除保护，返回新黑板及卡片、资源标识映射。内部绑定与资源链接自动重映射；历史回执不复制。 |
+| `delete_board` | `board_id`、`expected_version`、`command_id`；软删除后从列表移除，界面暂不提供整板恢复入口，不会删除磁盘原文件。 |
+
+副本的内容与导入资源可以独立修改，**受控文件引用仍指向同一个外部原文件**，不会自动复制原文件。黑板管理版本`version`随内容／布局或管理变动递增，过期的重命名、锁定、删除请求会返回`VERSION_CONFLICT`。
+
+锁定黑板代表**整板删除保护**：锁定后用户与Agent均不能直接删除整块黑板；只有用户能在管理界面显式解除保护，`set_board_lock`不向MCP公开。锁定不阻止日常卡片编辑／删除；如需保护某张卡片，使用原有单卡锁定。Agent删除黑板还需拥有该黑板的删除权限。
+
+旧单黑板数据库会在启动时自动升级，原`board_local`及资料保留；已有事件的数据库升级前备份至`data/backups/before-multiboard-*.sqlite3`。升级后重启后台并重连MCP加载21个工具，无需重新配置command。
+
 首次加载旧版数据库时自动升级到 schema 2.0，并通过 SQLite 备份 API 保存完整旧库到 `data/backups/before-world-*.sqlite3`。卡片标识、正文和资源保持；旧网格坐标转换到世界坐标。迁移前的增量游标需要重新快照；旧进程的网格写入被拒绝，请重新连接 MCP 加载新契约。
 
 SQLite 数据库为 `data/agentboard.sqlite3`，启用 WAL 与同步事务。资源副本也存放在数据库中。停止所有 HTTP／MCP 进程后，可复制整个数据目录作为备份；运行中不要只复制单个 `.sqlite3` 文件。删除卡片不会清理资源。当前保留所有卡片变更与回执，满足至少 30 天变化读取，但长期运行会增加数据库体积。
@@ -277,4 +301,4 @@ tests/                    服务与协议集成测试
 doc/                      原始规格与实现验收记录
 ```
 
-本版本不包含 P1 的多看板、多人协作、完整历史回滚、批量编辑、主动调度、事件消费或服务端任意脚本执行。交互演示在浏览器中计算；网页修改不会自动唤起 Agent 推理。
+本版本不包含多用户账户、完整历史回滚、批量编辑、主动调度、事件消费或服务端任意脚本执行。交互演示在浏览器中计算；网页修改不会自动唤起 Agent 推理。

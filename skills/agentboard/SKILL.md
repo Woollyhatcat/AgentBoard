@@ -9,7 +9,7 @@ description: 使用 AgentBoard MCP 维护人与 Agent 共用的持久化黑板�
 
 ## 开始工作
 
-1. 调用 `list_boards` 确认目标看板；只有一块时使用返回的标识。调用 `get_board_info` 了解权限、限制和 `web` 状态。
+1. 调用 `list_boards` 确认目标看板；只有一块时使用返回的标识。多块时按用户给出的名称／标识或链接中的 `board_id` 选择；无法确定时先确认目标。浏览器当前选择只保存在本机，不代表Agent已获得该选择，沿用已确认的标识。调用 `get_board_info` 了解权限、删除保护、版本、限制和 `web` 状态。
    - `web.status="running"` 时使用返回的 `web.url`。新版 MCP 会自动启动或复用同一数据目录的网页服务，网页独立于聊天进程持续运行。
    - `web` 缺失（旧 MCP 进程）或网页连接失败时，主动执行 `python "C:/Tools/AgentBoard/scripts/start_board.py"`，依据其 JSON 回执确认 `status="running"`。使用自定义目录／端口时传入与 MCP 一致的 `--data-dir`／`--port`，不要另建空看板。
    - 用户要求查看或把黑板用于讲解／共同讨论时，确认网页就绪后使用可用的打开页面工具（如 `open_in_codex`）展示该 URL，并给用户可点击的看板链接。后台维护资料时不必反复打开页面。启动失败时说明具体原因，区分“卡片已保存”和“网页可访问”。
@@ -46,6 +46,9 @@ description: 使用 AgentBoard MCP 维护人与 Agent 共用的持久化黑板�
 
 | 意图 | 工具与用法 |
 | --- | --- |
+| 新建独立黑板 | `create_board(name, command_id, description?)`，不传 `board_id`；返回的新标识用于后续读写。所有写入自动保存，不需要单独保存整板。 |
+| 重命名／复制 | `rename_board` 传最近读取的黑板 `version` 为 `expected_version`；`duplicate_board` 传源 `board_id` 和副本名称。副本的卡片、资源与绑定标识会重建；后续编辑独立，受控文件引用仍指向同一原文件。 |
+| 删除整块黑板 | 只在用户明确要求删除整块黑板时调用 `delete_board`，传最新黑板 `version` 为 `expected_version`。列表移除采用软删除，当前界面没有整板恢复入口。`BOARD_LOCKED` 时保留黑板，由用户在管理界面解除保护；Agent不能解锁。 |
 | 保存资料或参数 | `push_card`；七类为 `text`、`image`、`file`、`slider`、`checkbox`、`input`、`interactive`，`type_version` 为 `1.0`。省略 `layout` 可自动放置。 |
 | 更新已有卡片 | `read_card` 后调用 `edit_card`；只在 `changes` 中提交实际要修改的 `title`、`description`、`props`、`state` 或 `layout`。 |
 | 删除或恢复 | `delete_card` 软删除；`get_card_list(lifecycle="deleted")` 查回收站，`restore_card` 恢复原标识。 |
@@ -62,6 +65,12 @@ description: 使用 AgentBoard MCP 维护人与 Agent 共用的持久化黑板�
 ```
 
 `props` 定义控件规则，`state` 保存当前共享值。例如只改说明时，提交 `changes={"description":"待实验验证"}`，保留用户已调整的 `state.value`。
+
+黑板的 `locked` 是整板删除保护，不限制日常卡片编辑，也不替代单卡锁定。卡片变动同样更新黑板管理 `version`；整板删除遇到版本冲突时重新读取并审阅最新内容。每块黑板的卡片、资源、增量、回收站与游标各自隔离，避免将旧黑板的标识或续读标记带入另一块黑板。复制后使用返回的标识映射或重新读取副本，不沿用原卡片标识。
+
+## 工作目录与授权
+
+首次启动／升级默认授权项目下的 `workspace/`，所有黑板共用应用级授权列表。导入本地资料前调用 `get_asset_sources` 获取当前有效的 `root_id`，以相对路径使用 `approved_file`；不要硬编码默认目录标识。用户可在设置中取消授权，取消后重启不会自动恢复。目录权限只支持受控资源读取，不提供MCP文件写入或执行能力；Agent不能自行授权或恢复授权。撤权会阻止受控引用继续读取，既有导入副本保留。
 
 ## 自由画布与正文
 
@@ -106,7 +115,7 @@ description: 使用 AgentBoard MCP 维护人与 Agent 共用的持久化黑板�
 - 删除与恢复使用最近读取的 `version` 作为 `expected_version`。整卡检查的旧调用方式仍可用于编辑；锁定／解锁和生命周期变化会使两个分区都失效。已连接的旧 MCP 工具目录若没有新参数，重新连接加载新版目录。
 - 读取 `structuredContent` 中的 `ok`、`data`／`error` 与 `meta`，依据服务回执报告保存结果。
 - `VERSION_CONFLICT`：重新读取，审阅最新内容后只重建必要修改，使用新命令提交。`CARD_LOCKED`：保留待修改内容，请用户显式解锁。`CARD_DELETED`：按用户意图恢复或保留待办。
-- 超时或断线导致结果未知时，用原 `command_id` 调用 `get_operation_status`。`unknown`／`pending` 不是确定失败；需要重试时沿用原工具、原标识和完全相同的输入。结果仍不确定就报告待确认状态，留待连接恢复后处理。
+- 超时或断线导致结果未知时，用原 `command_id` 调用 `get_operation_status`，普通操作传原 `board_id`，`create_board` 的回执查询不传 `board_id`。`unknown`／`pending` 不是确定失败；需要重试时沿用原工具、原标识和完全相同的输入。结果仍不确定就报告待确认状态，留待连接恢复后处理。
 - 已确定的业务失败也有回执；修正参数属于新意图，使用新命令。`IDEMPOTENCY_KEY_REUSED` 表示同一标识曾用于不同输入。
 
 ## 分页与资源

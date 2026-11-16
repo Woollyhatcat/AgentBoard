@@ -86,7 +86,7 @@ def create_server(service, host="127.0.0.1", port=8765):
                 card_id = unquote(path.removeprefix("/api/interactive/"))
                 if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}",key):
                     self._json(400,{"error":"演示会话标识无效。"}); return
-                result = service.call("read_card",{"board_id":"board_local","card_id":card_id},USER)
+                result = service.call("read_card",{"board_id":query.get("board_id",["board_local"])[0],"card_id":card_id},USER)
                 if not result["ok"]:
                     self._json(404,result); return
                 card = result["data"]["card"]

@@ -19,7 +19,7 @@ import time
 
 from .schema import (BusinessError, INPUTS, USER_INPUTS, WRITES, TYPES, card_types,
                      normalize_card, validate, COMMAND, fail)
-from .migration import LAYOUT_POLICY, migrate, install_write_guard
+from .migration import LAYOUT_POLICY, migrate, migrate_boards, install_write_guard
 
 USER = {"id": "local_user", "kind": "user", "display_name": "本地用户"}
 AGENT = {"id": "local_agent", "kind": "agent", "display_name": "Agent"}
@@ -71,6 +71,7 @@ class BoardService:
                 CREATE TABLE IF NOT EXISTS cursors (
                     id TEXT PRIMARY KEY, actor TEXT NOT NULL, tool TEXT NOT NULL,
                     signature TEXT NOT NULL, expires REAL NOT NULL, body TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, body TEXT NOT NULL);
             """)
             db.execute("BEGIN IMMEDIATE")
             board = {"id": "board_local", "name": "我的工作黑板", "description": "人与 Agent，一起接着做。",
@@ -78,7 +79,15 @@ class BoardService:
                      "agent_permissions": PERMISSIONS}
             db.execute("INSERT OR IGNORE INTO board VALUES (?,?)", (board["id"], dump(board)))
             migrate(db, self.database)
+            migrate_boards(db, self.database)
             install_write_guard(db)
+            if not db.execute("SELECT 1 FROM settings WHERE key='workspace_initialized'").fetchone():
+                workspace = Path(__file__).resolve().parent.parent / "workspace"
+                workspace.mkdir(exist_ok=True)
+                existing = db.execute("SELECT id FROM roots WHERE path=?", (str(workspace.resolve()),)).fetchone()
+                if not existing:
+                    db.execute("INSERT INTO roots VALUES (?,?,?,1)", (uid("root"), "workspace（默认工作目录）", str(workspace.resolve())))
+                db.execute("INSERT INTO settings VALUES ('workspace_initialized','true')")
 
     def connect(self):
         db = sqlite3.connect(self.database, timeout=15)
@@ -87,25 +96,32 @@ class BoardService:
         return db
 
     @staticmethod
-    def _board(db):
-        return json.loads(db.execute("SELECT body FROM board").fetchone()[0])
+    def _board(db, board_id="board_local"):
+        row = db.execute("SELECT body FROM board WHERE id=?", (board_id,)).fetchone()
+        if not row:
+            raise BusinessError("NOT_FOUND", "找不到此黑板。")
+        return json.loads(row[0])
 
     @staticmethod
     def _save_board(db, board):
         db.execute("UPDATE board SET body=? WHERE id=?", (dump(board), board["id"]))
 
     @staticmethod
-    def _cards(db):
-        return [json.loads(row[0]) for row in db.execute("SELECT body FROM cards")]
+    def _cards(db, board_id="board_local"):
+        return [json.loads(row[0]) for row in db.execute(
+            "SELECT body FROM cards WHERE json_extract(body,'$.board_id')=?", (board_id,))]
 
     @staticmethod
     def permissions(board, actor):
         return (PERMISSIONS if actor["kind"] == "user" else board["agent_permissions"]) | {
-            "manage_lock": actor["kind"] == "user"}
+            "manage_lock": actor["kind"] == "user", "delete_board": not board.get("locked", False) and
+            (actor["kind"] == "user" or board["agent_permissions"]["delete"])}
 
     def _authorize(self, board, actor, tool, args):
         if actor.get("kind") not in ("user", "agent") or not actor.get("id"):
             raise BusinessError("UNAUTHORIZED", "访问身份无效。")
+        if tool in ("list_boards", "create_board") or (tool == "get_operation_status" and not args.get("board_id")):
+            return
         permissions = self.permissions(board, actor)
         if not permissions["read"]:
             raise BusinessError("FORBIDDEN", "当前身份没有看板访问权限。")
@@ -118,6 +134,11 @@ class BoardService:
             raise BusinessError("FORBIDDEN", "当前身份没有此操作权限。")
         if tool in USER_INPUTS and actor["kind"] != "user":
             raise BusinessError("FORBIDDEN", "此管理操作只能由用户执行。")
+        if board.get("lifecycle") == "deleted" and tool not in ("delete_board", "get_operation_status"):
+            raise BusinessError("BOARD_DELETED", "此黑板已删除，请选择其他黑板。")
+        action = {"rename_board":"edit", "delete_board":"delete", "duplicate_board":"create"}.get(tool)
+        if action and not permissions[action]:
+            raise BusinessError("FORBIDDEN", "当前身份没有此黑板管理权限。")
 
     def call(self, tool, args, actor=None):
         if tool == "get_board_screenshot":
@@ -130,14 +151,16 @@ class BoardService:
         try:
             # The transaction also freezes the read point for multi-query reads.
             db.execute("BEGIN IMMEDIATE")
-            board = self._board(db)
-            if board["schema_version"] != "2.0":
-                raise BusinessError("UNSUPPORTED_SCHEMA", "看板契约已改变，请重新连接 MCP 并刷新网页。")
-            meta["board_revision"] = board["revision"]
             if tool not in INPUTS and tool not in USER_INPUTS:
                 raise BusinessError("INVALID_ARGUMENT", "未知操作。")
             if not isinstance(args, dict):
                 raise BusinessError("INVALID_ARGUMENT", "参数必须是对象。")
+            global_call = tool in ("list_boards", "create_board") or (tool == "get_operation_status" and not args.get("board_id"))
+            board = self._board(db, "board_local" if global_call else args.get("board_id"))
+            if board["schema_version"] != "2.0":
+                raise BusinessError("UNSUPPORTED_SCHEMA", "看板契约已改变，请重新连接 MCP 并刷新网页。")
+            receipt_board = "__catalog__" if global_call else board["id"]
+            meta["board_revision"] = 0 if global_call else board["revision"]
             # Authorization precedes receipts and any disclosure of past results.
             self._authorize(board, actor, tool, args)
             writing = tool in WRITES
@@ -151,11 +174,12 @@ class BoardService:
                     raise BusinessError("INVALID_ARGUMENT", "输入必须是有效 JSON，数值必须有限。")
                 previous = db.execute(
                     "SELECT fingerprint, body FROM receipts WHERE actor=? AND board=? AND command=?",
-                    (identity, board["id"], args["command_id"])).fetchone()
+                    (identity, receipt_board, args["command_id"])).fetchone()
                 if previous:
                     if previous["fingerprint"] != fingerprint:
                         raise BusinessError("IDEMPOTENCY_KEY_REUSED", "此命令标识已用于不同请求。")
                     response = json.loads(previous["body"])
+                    self._receipt_access(db,actor,tool,response)
                     response["meta"].update(request_id=meta["request_id"], replayed=True)
                     db.commit()
                     return response
@@ -170,13 +194,13 @@ class BoardService:
                 data = self._execute(db, board, actor, tool, args)
                 response = {"ok": True, "data": data, "meta": meta}
                 meta["board_revision"] = data.get("revision", data.get("as_of_revision",
-                                            data.get("to_revision", board["revision"])))
+                                            data.get("to_revision", 0 if global_call else board["revision"])))
             except BusinessError as error:
                 db.execute("ROLLBACK TO business")
                 response = {"ok": False, "error": error.error, "meta": meta}
             if writing:
                 db.execute("INSERT INTO receipts VALUES (?,?,?,?,?,?)",
-                           (identity, board["id"], args["command_id"], fingerprint, dump(response), tool))
+                           (identity, receipt_board, args["command_id"], fingerprint, dump(response), tool))
             db.commit()
             return response
         except BusinessError as error:
@@ -192,11 +216,51 @@ class BoardService:
 
     def _execute(self, db, board, actor, tool, a):
         if tool == "list_boards":
-            item = {k: board[k] for k in ("id", "name", "description", "revision")}
-            item["permissions"] = self.permissions(board, actor)
-            return self._page(db, actor, tool, a, [item])
+            if a.get("cursor"):
+                result = self._page(db,actor,tool,a)
+                for item in result["items"]:
+                    current = self._board(db,item["id"])
+                    self._authorize(current,actor,"get_board_info",{"board_id":current["id"]})
+                return result
+            items = []
+            for row in db.execute("SELECT body FROM board ORDER BY rowid"):
+                item = json.loads(row[0])
+                if item["lifecycle"] == "active" and self.permissions(item,actor)["read"]:
+                    public = {k:item[k] for k in ("id","name","description","revision","version","locked","lifecycle")}
+                    public["permissions"] = self.permissions(item,actor)
+                    items.append(public)
+            return self._page(db, actor, tool, a, items)
+        if tool == "create_board":
+            return {"board":self._create_board(db,a["name"],a.get("description",""),actor)}
+        if tool == "duplicate_board":
+            return self._duplicate_board(db,board,actor,a["name"])
+        if tool in ("rename_board", "delete_board", "set_board_lock"):
+            self._check_version(board,a)
+            if tool == "delete_board" and board["locked"]:
+                raise BusinessError("BOARD_LOCKED","此黑板已开启删除保护，请由用户先解锁。")
+            original = deepcopy(board)
+            if tool == "rename_board":
+                if not a["name"].strip(): fail("黑板名称不能为空。","name")
+                board["name"] = a["name"].strip()
+            elif tool == "set_board_lock":
+                board["locked"] = a["locked"]
+            elif board["lifecycle"] != "deleted":
+                board.update(lifecycle="deleted",deleted_at=now(),deleted_by=actor)
+            if board != original:
+                self._commit_board(db,board,actor,tool)
+            return {"board":{k:v for k,v in board.items() if k != "agent_permissions"},"changed":board != original}
+        if a.get("card_id"):
+            card = self._card(db,a["card_id"])
+            if card["board_id"] != board["id"]:
+                raise BusinessError("NOT_FOUND","找不到此黑板中的卡片。")
+        if a.get("anchor_card_id") and self._card(db,a["anchor_card_id"])["board_id"] != board["id"]:
+            raise BusinessError("NOT_FOUND","邻近卡片不在目标黑板中。")
+        if a.get("asset_id"):
+            row = db.execute("SELECT body FROM assets WHERE id=?",(a["asset_id"],)).fetchone()
+            if not row or json.loads(row[0])["board_id"] != board["id"]:
+                raise BusinessError("NOT_FOUND","找不到此黑板中的资源。")
         if tool == "get_board_info":
-            cards = self._cards(db)
+            cards = self._cards(db,board["id"])
             public = {k: v for k, v in board.items() if k != "agent_permissions"}
             result = public | {"permissions": self.permissions(board, actor),
                                "supported_types": list(TYPES), "limits": LIMITS,
@@ -212,7 +276,7 @@ class BoardService:
         if tool in ("get_card_list", "get_board_snapshot"):
             if a.get("cursor"):
                 return self._page(db, actor, tool, a)
-            cards = sorted(self._cards(db), key=lambda c: (c["layout"]["y"], c["layout"]["x"], c["id"]))
+            cards = sorted(self._cards(db,board["id"]), key=lambda c: (c["layout"]["y"], c["layout"]["x"], c["id"]))
             life = a.get("lifecycle", "active") if tool == "get_card_list" else "active"
             cards = [c for c in cards if c["lifecycle"] == life]
             if a.get("type"):
@@ -240,13 +304,13 @@ class BoardService:
             if a["since_revision"] < board.get("migration_revision", 0):
                 raise BusinessError("SNAPSHOT_REQUIRED", "看板已升级为自由画布，请重新获取完整快照。",
                                     details={"earliest_available_revision": board["migration_revision"]})
-            earliest = db.execute("SELECT MIN(revision) FROM events").fetchone()[0]
+            earliest = db.execute("SELECT MIN(revision) FROM events WHERE board_id=?",(board["id"],)).fetchone()[0]
             if a["since_revision"] < (earliest - 1 if earliest else board["revision"]):
                 raise BusinessError("SNAPSHOT_REQUIRED", "该区间的变化记录已不可用，请重新获取快照。",
                                     details={"earliest_available_revision": earliest})
             events = [json.loads(r[0]) for r in db.execute(
-                "SELECT body FROM events WHERE revision>? AND revision<=? ORDER BY revision",
-                (a["since_revision"], board["revision"]))]
+                "SELECT body FROM events WHERE board_id=? AND revision>? AND revision<=? ORDER BY revision",
+                (board["id"],a["since_revision"], board["revision"]))]
             return self._page(db, actor, tool, a, events,
                               {"from_revision": a["since_revision"], "to_revision": board["revision"]})
         if tool == "push_card":
@@ -256,7 +320,7 @@ class BoardService:
             self._check_asset_link(db, board, card)
             if "layout" not in card:
                 card["layout"] = self._place(db, TYPES[card["type"]]["default_layout"],
-                                             a.get("anchor_card_id"), kind=card["type"])
+                                             a.get("anchor_card_id"), kind=card["type"],board_id=board["id"])
             card.update(id=uid("card"), board_id=board["id"], locked=False, lifecycle="active",
                         version=0, content_version=0, layout_version=0,
                         created_at=now(), created_by=actor, deleted_at=None, deleted_by=None)
@@ -302,9 +366,9 @@ class BoardService:
                 kind = "deleted"
             elif tool == "restore_card":
                 if card["lifecycle"] == "deleted":
-                    if self._collisions(db, card["layout"], card["id"]):
+                    if self._collisions(db, card["layout"], card["id"],board["id"]):
                         card["layout"] = self._place(db, card["layout"], origin=card["layout"],
-                                                     kind=card["type"], excluding=card["id"])
+                                                     kind=card["type"], excluding=card["id"],board_id=board["id"])
                         adjusted = True
                     card.update(lifecycle="active", deleted_at=None, deleted_by=None)
                 kind = "restored"
@@ -325,19 +389,23 @@ class BoardService:
             return result
         if tool == "get_operation_status":
             receipt = db.execute("SELECT body,tool FROM receipts WHERE actor=? AND board=? AND command=?",
-                                 (actor["kind"] + ":" + actor["id"], board["id"], a["command_id"])).fetchone()
+                                 (actor["kind"] + ":" + actor["id"], a.get("board_id","__catalog__"), a["command_id"])).fetchone()
             if receipt:
-                self._authorize(board, actor, receipt["tool"], {"board_id": board["id"]})
+                self._authorize(board, actor, receipt["tool"], {"board_id": a.get("board_id")})
             result = json.loads(receipt[0]) if receipt else None
+            if receipt:
+                self._receipt_access(db,actor,receipt["tool"],result)
             return {"status": ("succeeded" if result["ok"] else "failed") if result else "unknown",
                     "result": result}
         if tool == "update_board":
+            original = deepcopy(board)
             for key in ("name", "description", "agent_permissions"):
                 if key in a:
                     if key == "name" and not a[key].strip():
                         fail("看板名称不能为空。", "name")
                     board[key] = board[key] | a[key] if key == "agent_permissions" else a[key].strip()
-            self._save_board(db, board)
+            if board != original:
+                self._commit_board(db,board,actor,"settings_updated")
             return {"board": board}
         if tool == "grant_root":
             try:
@@ -346,6 +414,9 @@ class BoardService:
                 fail("目录不存在或不可访问。", "path")
             if not root.is_dir():
                 fail("请选择一个目录。", "path")
+            existing = db.execute("SELECT id,label FROM roots WHERE path=? AND active=1",(str(root),)).fetchone()
+            if existing:
+                return {"root_id":existing["id"],"label":existing["label"]}
             root_id = uid("root")
             db.execute("INSERT INTO roots VALUES (?,?,?,1)", (root_id, a["label"], str(root)))
             return {"root_id": root_id, "label": a["label"]}
@@ -354,10 +425,11 @@ class BoardService:
             return {"revoked": True, "root_id": a["root_id"]}
         if tool == "get_asset_sources":
             allowed = self.permissions(board, actor)["import_asset"]
-            roots = [{"root_id": r["id"], "label": r["label"], "can_import": allowed, "can_reference": allowed}
-                     for r in db.execute("SELECT id,label FROM roots WHERE active=1 ORDER BY id")]
+            roots = [{"root_id": r["id"], "label": r["label"], "can_import": allowed, "can_reference": allowed,
+                      **({"path":r["path"]} if actor["kind"] == "user" else {})}
+                     for r in db.execute("SELECT id,label,path FROM roots WHERE active=1 ORDER BY rowid")]
             return {"roots": roots, "inline_max_bytes": LIMITS["inline_max_bytes"],
-                    "asset_max_bytes": LIMITS["asset_max_bytes"]}
+                    "asset_max_bytes": LIMITS["asset_max_bytes"],**({"default_workspace":str(Path(__file__).resolve().parent.parent/"workspace")} if actor["kind"] == "user" else {})}
         if tool == "upload_asset":
             request = {"name": a["name"], "mode": "imported", "source": {
                 "kind": "inline", "data_base64": a["data_base64"]}}
@@ -370,7 +442,7 @@ class BoardService:
         if tool == "read_asset":
             return self._read_asset(db, actor, a)
         if tool == "list_assets":
-            items = [json.loads(r[0]) for r in db.execute("SELECT body FROM assets ORDER BY id")]
+            items = [json.loads(r[0]) for r in db.execute("SELECT body FROM assets WHERE json_extract(body,'$.board_id')=? ORDER BY id",(board["id"],))]
             return self._page(db, actor, tool, a, items)
         raise BusinessError("INVALID_ARGUMENT", "未知操作。")
 
@@ -402,8 +474,63 @@ class BoardService:
                                              "card_version": card["version"]},
                                     recovery="重新读取卡片并审阅发生冲突的内容或布局，使用新命令提交。")
 
+    def _create_board(self, db, name, description, actor):
+        if not name.strip():
+            fail("黑板名称不能为空。","name")
+        board = {"id":uid("board"),"name":name.strip(),"description":description.strip(),
+                 "revision":0,"version":1,"locked":False,"lifecycle":"active","deleted_at":None,
+                 "schema_version":"2.0","layout_policy":deepcopy(LAYOUT_POLICY),
+                 "agent_permissions":deepcopy(PERMISSIONS),"created_at":now(),"created_by":actor}
+        db.execute("INSERT INTO board VALUES (?,?)",(board["id"],dump(board)))
+        return board
+
+    def _receipt_access(self, db, actor, tool, response):
+        # Creating/copying returns a different board; later revocation also
+        # applies to those historical results, including global create receipts.
+        if tool in ("create_board","duplicate_board") and response["ok"]:
+            target = self._board(db,response["data"]["board"]["id"])
+            self._authorize(target,actor,"get_board_info",{"board_id":target["id"]})
+
+    def _duplicate_board(self, db, source, actor, name):
+        board = self._create_board(db,name,source["description"],actor)
+        board["agent_permissions"] = deepcopy(source["agent_permissions"])
+        board["locked"] = source["locked"]
+        cards = self._cards(db,source["id"])
+        assets = db.execute("SELECT * FROM assets WHERE json_extract(body,'$.board_id')=?",(source["id"],)).fetchall()
+        ids = {card["id"]:uid("card") for card in cards}
+        ids.update({row["id"]:uid("asset") for row in assets})
+        ids[source["id"]] = board["id"]
+
+        def remap(value):
+            if isinstance(value,dict): return {k:remap(v) for k,v in value.items()}
+            if isinstance(value,list): return [remap(v) for v in value]
+            if isinstance(value,str):
+                for old,new in ids.items(): value = value.replace(old,new)
+            return value
+
+        for row in assets:
+            asset = json.loads(row["body"])
+            asset.update(id=ids[row["id"]],board_id=board["id"],created_at=now(),created_by=actor)
+            db.execute("INSERT INTO assets VALUES (?,?,?)",(asset["id"],dump(asset),row["content"]))
+        for card in cards:
+            card = remap(card)
+            card.update(board_id=board["id"],version=0,content_version=0,layout_version=0,created_at=now(),created_by=actor)
+            self._commit_card(db,board,actor,card,"created",True,True)
+        self._save_board(db,board)
+        return {"board":board,"card_id_map":{c["id"]:ids[c["id"]] for c in cards},
+                "asset_id_map":{row["id"]:ids[row["id"]] for row in assets}}
+
+    def _commit_board(self, db, board, actor, kind):
+        board.update(revision=board["revision"]+1,version=board["version"]+1,updated_at=now())
+        event = {"revision":board["revision"],"event_id":uid("evt"),"kind":kind,
+                 "card_id":None,"card_version":None,"card_after":None,"actor":actor,"occurred_at":now()}
+        db.execute("INSERT INTO events VALUES (?,?,?)",(board["id"],board["revision"],dump(event)))
+        self._save_board(db,board)
+
     def _commit_card(self, db, board, actor, card, kind, content_changed=True, layout_changed=False):
         board["revision"] += 1
+        board["version"] += 1
+        board["updated_at"] = now()
         card.update(version=card["version"] + 1, last_revision=board["revision"],
                     updated_at=now(), updated_by=actor)
         card["content_version"] += int(content_changed)
@@ -412,17 +539,17 @@ class BoardService:
         event = {"revision": board["revision"], "event_id": uid("evt"), "kind": kind,
                  "card_id": card["id"], "card_version": card["version"], "actor": actor,
                  "occurred_at": card["updated_at"], "card_after": card}
-        db.execute("INSERT INTO events VALUES (?,?)", (board["revision"], dump(event)))
+        db.execute("INSERT INTO events VALUES (?,?,?)", (board["id"],board["revision"], dump(event)))
         self._save_board(db, board)
 
-    def _collisions(self, db, layout, excluding=None):
-        return [c for c in self._cards(db) if c["lifecycle"] == "active" and
+    def _collisions(self, db, layout, excluding=None, board_id="board_local"):
+        return [c for c in self._cards(db,board_id) if c["lifecycle"] == "active" and
                 c["id"] != excluding and overlaps(layout, c["layout"])]
 
     def _check_bindings(self, db, card):
         if card["type"] != "interactive":
             return
-        cards = {c["id"]:c for c in self._cards(db)}
+        cards = {c["id"]:c for c in self._cards(db,card["board_id"])}
         for alias, binding in card["props"]["bindings"].items():
             source = cards.get(binding["card_id"])
             path = "props.bindings."+alias
@@ -452,8 +579,8 @@ class BoardService:
                 if node and node["type"] == "interactive":
                     pending.extend(b["card_id"] for b in node["props"]["bindings"].values())
 
-    def _place(self, db, size, anchor_id=None, origin=None, kind=None, excluding=None):
-        cards = [c for c in self._cards(db) if c["lifecycle"] == "active" and c["id"] != excluding]
+    def _place(self, db, size, anchor_id=None, origin=None, kind=None, excluding=None, board_id="board_local"):
+        cards = [c for c in self._cards(db,board_id) if c["lifecycle"] == "active" and c["id"] != excluding]
         anchor = self._card(db, anchor_id)["layout"] if anchor_id else None
         origin = origin or ({"x": anchor["x"] + anchor["w"] + 24, "y": anchor["y"]} if anchor else
                             {"x": 0, "y": 0})
@@ -697,9 +824,14 @@ class BoardService:
     def asset_bytes_for_user(self, asset_id):
         return self.asset_bytes_for_actor(asset_id, USER)
 
-    def asset_bytes_for_actor(self, asset_id, actor):
+    def asset_bytes_for_actor(self, asset_id, actor, board_id=None):
         with closing(self.connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
-            self._authorize(self._board(db), actor, "read_asset",
-                            {"board_id": "board_local", "asset_id": asset_id})
+            row = db.execute("SELECT body FROM assets WHERE id=?",(asset_id,)).fetchone()
+            if not row:
+                raise BusinessError("NOT_FOUND","找不到此资源。")
+            owner = json.loads(row[0])["board_id"]
+            if board_id is not None and owner != board_id:
+                raise BusinessError("NOT_FOUND","找不到此黑板资源。")
+            self._authorize(self._board(db,owner), actor, "read_asset", {"board_id":owner,"asset_id":asset_id})
             return self._asset_content(db, asset_id)

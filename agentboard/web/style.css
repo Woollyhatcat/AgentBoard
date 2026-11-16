@@ -130,3 +130,14 @@ html:has(.capture-mode),body.capture-mode{min-width:0}
 .interactive-stage.read-only .interactive-frame{pointer-events:none}
 .interactive-stage.input-unavailable .interactive-frame{visibility:hidden}
 .interactive-stage.input-unavailable:after{content:"输入恢复后继续显示演示";position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:12px}
+.rail{overflow-y:auto}
+.board-navigation{padding:10px 4px 18px;display:grid;gap:9px;border-bottom:1px solid var(--line);margin-bottom:14px;flex-shrink:0}
+.board-navigation label{font-size:11px;color:var(--muted)}
+.board-navigation select{width:100%;min-width:0;border:1px solid var(--line);border-radius:6px;padding:9px;color:var(--ink);background:var(--paper);font-size:12px}
+.board-nav-actions{display:flex;gap:6px}.board-nav-actions .secondary{flex:1;padding:8px 4px;font-size:11px;white-space:nowrap}
+.board-management-row{border:1px solid var(--line);border-radius:8px;padding:16px;margin-top:14px;overflow-wrap:anywhere}
+.board-management-row strong{font-size:14px}.board-management-id{font:10px/1.8 Consolas,monospace;color:var(--muted);margin-top:7px}
+.board-management-row .dialog-description{margin:8px 0 12px}.board-management-actions{display:flex;flex-wrap:wrap;gap:8px}
+.board-management-actions .secondary{padding:7px 10px;font-size:11px}.danger{color:var(--red)}
+.root-item>div{min-width:0}.root-item button{flex:none}.root-path{font:11px/1.7 Consolas,monospace;overflow-wrap:anywhere;color:var(--muted);margin-top:5px}
+#current-board-name{display:inline-block;max-width:45vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}

@@ -45,10 +45,10 @@ class SharedMCPTests(unittest.TestCase):
         self.assertNotEqual(second["Mcp-Session-Id"],headers["Mcp-Session-Id"])
         self.assertEqual(self.rpc({"jsonrpc":"2.0","method":"notifications/initialized"},session)[0],202)
         message={"jsonrpc":"2.0","id":3,"method":"tools/list"}
-        self.assertEqual(len(self.rpc(message,session)[2]["result"]["tools"]),17)
+        self.assertEqual(len(self.rpc(message,session)[2]["result"]["tools"]),21)
         self.assertIn("error",self.rpc(message,{"Mcp-Session-Id":second["Mcp-Session-Id"]})[2])
         versioned={**message,"params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2025-11-25"}}}
-        self.assertEqual(len(self.rpc(versioned,{**session,"MCP-Protocol-Version":"2025-11-25"})[2]["result"]["tools"]),17)
+        self.assertEqual(len(self.rpc(versioned,{**session,"MCP-Protocol-Version":"2025-11-25"})[2]["result"]["tools"]),21)
         call={"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"set_card_lock","arguments":{}}}
         self.assertEqual(self.rpc(call,session)[2]["error"]["code"],-32602)
 

@@ -3,6 +3,8 @@ __pycache__/
 .venv/
 .env
 data/
+workspace/*
+!workspace/.gitkeep
 coverage.xml
 .coverage
 test-results/

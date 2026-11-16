@@ -85,7 +85,7 @@ class InteractiveCards {
     frame.className = "interactive-frame"; frame.title = r.card.title + "交互演示";
     frame.setAttribute("sandbox","allow-scripts"); frame.setAttribute("referrerpolicy","no-referrer");
     frame.setAttribute("allow","camera 'none'; microphone 'none'; geolocation 'none'; fullscreen 'none'");
-    frame.src = "/api/interactive/"+encodeURIComponent(r.card.id)+"?key="+r.key+"&v="+r.card.content_version;
+    frame.src = "/api/interactive/"+encodeURIComponent(r.card.id)+"?key="+r.key+"&v="+r.card.content_version+"&board_id="+encodeURIComponent(r.card.board_id);
     r.frame = frame; r.stage.replaceChildren(frame);
     let loads = 0;
     frame.addEventListener("load",() => { if (++loads > 1) this.halt(r,"演示发生页面跳转，已停止。请检查代码后重新运行。"); });
