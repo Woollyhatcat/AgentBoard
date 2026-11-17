@@ -8,7 +8,7 @@ import sys
 ROOT = Path(__file__).resolve().parent.parent
 PRIVATE_DIRS = {"data","workspace","backups","exports","screenshots","test-results","private",
                 ".local",".codex",".agents",".vscode",".idea",".ssh",".aws",".venv","__pycache__"}
-PRIVATE_SUFFIX = re.compile(r"\.(?:agentboard|sqlite3?|db)(?:-.*)?$|\.(?:pem|key|p12|pfx|log|bak|zip|7z|tar|gz)$",re.I)
+PRIVATE_SUFFIX = re.compile(r"\.(?:agentboard|sqlite3?|db)(?:-.*)?$|\.(?:pem|key|p12|pfx|log|bak|zip|7z|tar|gz|bundle)$",re.I)
 SECRET = re.compile(rb"sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{25,}|github_pat_[A-Za-z0-9_]{30,}|-----BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY-----")
 PERSONAL_PATH = re.compile(rb"C:(?:/Users/1/|\\\\Users\\\\1\\\\|\\Users\\1\\)")
 

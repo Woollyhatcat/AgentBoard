@@ -28,6 +28,7 @@ private/
 *.7z
 *.tar
 *.tar.gz
+*.bundle
 mcp-token
 credentials*.json
 secrets*.json
