@@ -78,7 +78,7 @@ Copy-Item -LiteralPath ".\skills\agentboard" -Destination "$env:USERPROFILE\.age
 
 如果目标已存在同名 skill，先检查已有内容，再合并更新，避免复制成两层 `agentboard/agentboard`。
 
-**当前 skill 中仍有开发者电脑上的项目绝对路径，需要改成你的路径。** 打开复制后的 `SKILL.md`，将其中的 `C:/Tools/AgentBoard` 全部替换为你的项目目录（本例为 `C:/Tools/AgentBoard`）。这些路径用于启动服务、截图和读取交互卡片文档；只改 MCP 配置不会同时改好它们。保留项目中的 `doc/` 和 `scripts/`，供 skill 引用。
+**skill 中预置了示例项目路径，需要改成你的路径。** 打开复制后的 `SKILL.md`，将其中的 `C:/Tools/AgentBoard` 全部替换为你的项目目录（如果使用本例目录，则无需替换）。这些路径用于启动服务、截图和读取交互卡片文档；只改 MCP 配置不会同时改好它们。保留项目中的 `doc/` 和 `scripts/`，供 skill 引用。
 
 安装完成后可在支持 `$` 调用的 Codex 输入框中使用 `$agentboard`；也可直接说明要使用 AgentBoard。skill 的用户级安装位置及发现方式见 [官方技能文档](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills)。
 
@@ -303,7 +303,11 @@ Chrome／Edge优先使用浏览器原生打开与保存对话框；在不支持�
 
 SQLite 数据库为 `data/agentboard.sqlite3`，启用 WAL 与同步事务。资源副本也存放在数据库中。停止所有 HTTP／MCP 进程后，可复制整个数据目录作为备份；运行中不要只复制单个 `.sqlite3` 文件。删除卡片不会清理资源。当前保留所有卡片变更与回执，满足至少 30 天变化读取，但长期运行会增加数据库体积。
 
-源码、测试与规格通过本地 Git 管理；`data/`、缓存与环境文件不进入版本库。未配置远程仓库。
+源码、测试与规格通过Git管理。个人黑板数据库、资源、回执、密钥、导出包、workspace文件、截图、日志、备份和本机配置均在`.gitignore`中排除；`workspace/.gitkeep`仅用于保留空目录。
+
+推送前执行 `python scripts/check_publish.py`，它检查所有可达提交历史与已跟踪文件，而不仅是当前工作区；发现运行数据、个人截图、凭据特征或开发者本机路径时返回失败，报告不打印密钥值。`.gitignore`不会自动移除已跟踪文件，也不能清理旧提交中的数据，因此不要用`git add -f`提交这些文件。
+
+首次远程发布前，已有开发历史中的个人黑板截图及本机验收记录已排除，示例路径已统一为`C:/Tools/AgentBoard`。原始完整Git历史另存为本地`data/backups/private-history-before-publish.bundle`，该备份不会上传，也不应手动推送或加入版本管理。
 
 ## 项目结构
 

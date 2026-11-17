@@ -5,7 +5,7 @@ description: 使用 AgentBoard MCP 维护人与 Agent 共用的持久化黑板�
 
 # AgentBoard
 
-通过当前会话中的 AgentBoard MCP 工具操作共享黑板。工具命名空间以实际发现为准。
+通过当前会话中的 AgentBoard MCP 工具操作共享黑板。工具命名空间以实际发现为准。下文的 `C:/Tools/AgentBoard` 是安装目录示例，使用命令或本机文档前按实际MCP启动路径替换。
 
 ## 开始工作
 
