@@ -13,6 +13,72 @@ from agentboard.service import BoardService, USER
 
 @unittest.skipUnless(importlib.util.find_spec("playwright"),"Browser acceptance requires Playwright")
 class BoardUITests(unittest.TestCase):
+    def test_archive_buttons_file_picker_cancel_and_lost_import_reply(self):
+        from playwright.sync_api import sync_playwright, expect, Error as BrowserError
+        with tempfile.TemporaryDirectory() as directory:
+            service = BoardService(directory)
+            result = service.call("push_card",{"board_id":"board_local","command_id":"archive-example","card":{
+                "type":"text","type_version":"1.0","title":"便携板书","props":{"font_size":24},"state":{"text":"$$x^2+y^2=1$$"}}},USER)
+            self.assertTrue(result["ok"],result)
+            server = create_server(service,port=0)
+            thread = Thread(target=server.serve_forever,daemon=True); thread.start()
+            try:
+                with sync_playwright() as playwright:
+                    browser = None
+                    for channel in ("msedge","chrome",None):
+                        try: browser = playwright.chromium.launch(channel=channel,headless=True); break
+                        except BrowserError: continue
+                    if browser is None: self.skipTest("Browser acceptance requires Edge/Chrome or Playwright Chromium")
+                    try:
+                        page = browser.new_page(viewport={"width":1500,"height":1000})
+                        errors = []; page.on("pageerror",lambda error:errors.append(str(error)))
+                        page.goto(f"http://127.0.0.1:{server.server_address[1]}/")
+                        page.wait_for_function("() => app.connected && app.loaded")
+                        page.locator("#manage-boards-btn").click()
+                        # OS dialog UI is outside headless automation. Substitute only
+                        # the user-selected handles; use real HTTP and ZIP processing.
+                        page.evaluate("""() => {
+                          window.showSaveFilePicker = async options => {
+                            if (!navigator.userActivation.isActive) throw Error('Missing user gesture');
+                            window.suggestedArchiveName = options.suggestedName;
+                            return {createWritable:async () => ({write:async blob => {window.savedArchive=blob},close:async () => {}})};
+                          };
+                        }""")
+                        page.get_by_role("button",name="导出",exact=True).click()
+                        page.wait_for_function("() => window.savedArchive instanceof Blob")
+                        self.assertTrue(page.evaluate("() => window.suggestedArchiveName.endsWith('.agentboard')"))
+                        expect(page.get_by_role("button",name="导入黑板",exact=True)).to_be_enabled()
+                        page.evaluate("""() => {window.showOpenFilePicker=async () => {throw new DOMException('cancel','AbortError')}}""")
+                        page.get_by_role("button",name="导入黑板",exact=True).click()
+                        expect(page.get_by_role("button",name="导入黑板",exact=True)).to_be_enabled()
+                        self.assertEqual(len(service.call("list_boards",{},USER)["data"]["items"]),1)
+                        page.evaluate("""() => {window.showOpenFilePicker=async () => [{getFile:async () => new File(['bad archive'],'bad.agentboard')}]}""")
+                        page.get_by_role("button",name="导入黑板",exact=True).click()
+                        expect(page.locator("#modal .field-error")).not_to_have_text("")
+                        expect(page.get_by_role("button",name="导入黑板",exact=True)).to_be_enabled()
+                        self.assertEqual(len(service.call("list_boards",{},USER)["data"]["items"]),1)
+                        page.evaluate("""() => {window.showOpenFilePicker=async () => [{getFile:async () => new File([window.savedArchive],'portable.agentboard')}]}""")
+                        uploads = []
+                        def lose_reply(route):
+                            uploads.append(route.request.headers.get("x-agentboard-command"))
+                            response = route.fetch()
+                            self.assertEqual(response.status,200)
+                            route.abort("failed")
+                        page.route("**/api/boards/import",lose_reply)
+                        page.get_by_role("button",name="导入黑板",exact=True).click()
+                        page.wait_for_function("() => app.boardId !== 'board_local' && app.loaded && app.pending.size === 0",timeout=20000)
+                        self.assertEqual(len(uploads),1)
+                        self.assertEqual(len(service.call("list_boards",{},USER)["data"]["items"]),2)
+                        expect(page.locator(".card-head h2")).to_have_text("便携板书")
+                        page.locator("#manage-boards-btn").click()
+                        expect(page.locator(".board-management-row")).to_have_count(2)
+                        artifacts = Path(__file__).resolve().parent.parent/"test-results"
+                        artifacts.mkdir(exist_ok=True)
+                        page.screenshot(path=str(artifacts/"board-archive-management.png"))
+                        self.assertEqual(errors,[])
+                    finally: browser.close()
+            finally: server.shutdown(); server.server_close(); thread.join(3)
+
     def test_management_switching_and_authorized_directories(self):
         from playwright.sync_api import sync_playwright, expect, Error as BrowserError
         with tempfile.TemporaryDirectory() as directory:

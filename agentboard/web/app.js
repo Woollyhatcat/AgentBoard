@@ -152,14 +152,14 @@ async function reconcilePending() {
   for (const [command, pending] of [...app.pending]) {
     const statusArgs = {board_id:pending.args.board_id ?? null,command_id:command};
     if (statusArgs.board_id === null) delete statusArgs.board_id;
-    const status = await rpc("get_operation_status", {...statusArgs,...(pending.tool === "create_board" ? {board_id:undefined} : {})});
+    const status = await rpc("get_operation_status", {...statusArgs,...(["create_board","import_board"].includes(pending.tool) ? {board_id:undefined} : {})});
     if (status.status === "pending") continue;
     if (status.status === "unknown") {
       // Reuse the original command and input. Never guess with a new command.
-      try { await rpc(pending.tool, pending.args); }
+      try { if (pending.retry) await pending.retry(); else await rpc(pending.tool, pending.args); }
       catch (error) { if (!error.business) throw error; }
     }
-    const confirmed = status.status === "unknown" ? await rpc("get_operation_status", {...statusArgs,...(pending.tool === "create_board" ? {board_id:undefined} : {})}) : status;
+    const confirmed = status.status === "unknown" ? await rpc("get_operation_status", {...statusArgs,...(["create_board","import_board"].includes(pending.tool) ? {board_id:undefined} : {})}) : status;
     if (confirmed.status === "succeeded" || confirmed.status === "failed") {
       app.pending.delete(command);
       const result = confirmed.result;
@@ -288,6 +288,10 @@ async function sync() {
     app.syncing = false;
     app.resolveSync?.();
     updateSaveStatus();
+    if (app.recoveredImport && !hasBoardDrafts()) {
+      const id = app.recoveredImport; app.recoveredImport = null;
+      setTimeout(() => switchBoard(id).catch(error => toast(error.message,true)),0);
+    }
   }
 }
 
@@ -1103,23 +1107,112 @@ function boardNameDialog(mode, board = null) {
   $('[name="name"]',form).select();
 }
 
+const BOARD_FILE_TYPES = [{description:"AgentBoard黑板数据",accept:{"application/octet-stream":[".agentboard"]}}];
+const MAX_BOARD_FILE_BYTES = 256*1024*1024;
+
+async function boardFileRequest(path, body, command = null) {
+  const binary = body instanceof Blob;
+  const response = await fetch(path,{method:"POST",headers:{
+    "Content-Type":binary ? "application/octet-stream" : "application/json","X-AgentBoard-Session":app.session,
+    ...(command ? {"X-AgentBoard-Command":command} : {})},body:binary ? body : JSON.stringify(body),
+    signal:AbortSignal.timeout(path.startsWith("/api/board-files/") ? 360000 : 120000)});
+  if (!response.ok) {
+    let result;
+    try { result = await response.json(); } catch { /* Network/server errors may have no JSON body. */ }
+    const error = new Error(result?.error?.message || "文件操作失败（"+response.status+"）。");
+    if (result?.error?.code) error.business = result.error;
+    error.sessionInvalid = response.status === 403;
+    throw error;
+  }
+  return response;
+}
+
+async function chooseBoardFile() {
+  if (typeof window.showOpenFilePicker === "function") {
+    try {
+      const [handle] = await window.showOpenFilePicker({types:BOARD_FILE_TYPES,multiple:false});
+      return await handle.getFile();
+    } catch (error) {
+      if (error.name === "AbortError") return null;
+      if (!["SecurityError","NotSupportedError"].includes(error.name)) throw error;
+    }
+  }
+  const response = await boardFileRequest("/api/board-files/open",{});
+  return response.status === 204 ? null : response.blob();
+}
+
+async function exportBoardFile(board) {
+  let handle = null;
+  if (typeof window.showSaveFilePicker === "function") {
+    try {
+      let stem = board.name.replace(/[<>:"/\\|?*\x00-\x1f]/g,"_").replace(/[ .]+$/g,"").slice(0,80) || "AgentBoard";
+      if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)) stem = "AgentBoard_"+stem;
+      handle = await window.showSaveFilePicker({suggestedName:stem+".agentboard",types:BOARD_FILE_TYPES});
+    } catch (error) {
+      if (error.name === "AbortError") return;
+      if (!["SecurityError","NotSupportedError"].includes(error.name)) throw error;
+    }
+  }
+  if (!handle) {
+    const result = await (await boardFileRequest("/api/board-files/export",{board_id:board.id})).json();
+    if (!result.data.cancelled) toast("黑板已导出为「"+result.data.filename+"」。");
+    return;
+  }
+  const response = await boardFileRequest("/api/boards/export",{board_id:board.id});
+  const blob = await response.blob();
+  const writable = await handle.createWritable();
+  try { await writable.write(blob); await writable.close(); }
+  catch (error) { try { await writable.abort(); } catch { /* Already closed. */ } throw error; }
+  toast("黑板已导出，可复制到其他电脑导入。");
+}
+
+async function importBoardFile(file) {
+  if (!file.size || file.size > MAX_BOARD_FILE_BYTES) throw new Error("请选择不超过256 MiB的AgentBoard数据文件。");
+  // Keep immutable bytes for an identical retry even if the selected disk file changes.
+  const archive = new Blob([await file.arrayBuffer()],{type:"application/octet-stream"});
+  if (hasBoardDrafts()) throw new Error("请先处理当前草稿和未确认操作，再导入黑板。");
+  const command = crypto.randomUUID();
+  const upload = async () => {
+    const result = await (await boardFileRequest("/api/boards/import",archive,command)).json();
+    if (!result.ok) { const error = new Error(result.error.message); error.business = result.error; throw error; }
+    return result.data;
+  };
+  app.pending.set(command,{tool:"import_board",args:{command_id:command},cardId:null,retry:upload,
+    onSuccess:data => { app.recoveredImport = data.board.id; }});
+  app.lastError = null; updateSaveStatus();
+  try {
+    const data = await upload(); app.pending.delete(command);
+    toast(`已导入「${data.board.name}」：${data.card_count}张卡片，${data.asset_count}项资源。`);
+    return data;
+  } catch (error) {
+    if (error.business) { app.pending.delete(command); app.lastError = error.message; }
+    else { setConnection(false); error.message = "导入结果待确认，请保留此页面；重连后会核对原命令，避免重复导入。"; }
+    throw error;
+  } finally { updateSaveStatus(); }
+}
+
 async function manageBoardsDialog() {
   if (hasBoardDrafts()) { toast("请先保存或取消当前草稿，并等待操作确认。",true); return; }
   const root = el("div"), rows = el("div"), errorBox = el("p",{class:"field-error",role:"alert"});
   let busy = false;
+  const run = async action => {
+    if (busy) return; busy = true; errorBox.textContent = "";
+    $$("button",root).forEach(button => { button.disabled = true; });
+    try { return await action(); }
+    catch (error) { errorBox.textContent = describeError(error); }
+    finally {
+      busy = false;
+      $$(".board-file-toolbar button",root).forEach(button => { button.disabled = false; });
+      if (rows.isConnected) { try { await load(); } catch (error) { errorBox.textContent = describeError(error); } }
+    }
+  };
   const load = async () => {
     app.boards = (await allPages("list_boards")).items; renderBoardNavigation(); rows.replaceChildren();
     for (const board of app.boards) {
-      const run = async action => {
-        if (busy) return; busy = true; errorBox.textContent = "";
-        $$("button",rows).forEach(button => { button.disabled = true; });
-        try { await action(); }
-        catch (error) { errorBox.textContent = describeError(error); }
-        finally { busy = false; if (rows.isConnected) await load(); }
-      };
       const actions = el("div",{class:"board-management-actions"},
         el("button",{class:"secondary",text:"重命名",onClick:() => boardNameDialog("rename",board)}),
         el("button",{class:"secondary",text:"复制副本",onClick:() => boardNameDialog("duplicate",board)}),
+        el("button",{class:"secondary",text:"导出",onClick:() => run(() => exportBoardFile(board))}),
         el("button",{class:"secondary",text:board.locked ? "解除删除保护" : "锁定黑板",onClick:() => run(async () => {
           await mutate("set_board_lock",{board_id:board.id,expected_version:board.version,locked:!board.locked});
           toast(board.locked ? "删除保护已解除。" : "删除保护已开启，用户与 Agent 均不能直接删除整块黑板。");
@@ -1135,7 +1228,11 @@ async function manageBoardsDialog() {
     if (!app.boards.length) rows.append(el("p",{text:"尚无黑板，点击新建开始。"}));
   };
   root.append(el("p",{class:"dialog-description",text:"每块黑板独立自动保存。锁定只保护整块黑板不被删除，不阻止日常编辑。"}),
-    el("button",{class:"primary",text:"＋ 新建黑板",onClick:() => boardNameDialog("create")}),rows,errorBox);
+    el("div",{class:"board-file-toolbar"},el("button",{class:"primary",text:"＋ 新建黑板",onClick:() => boardNameDialog("create")}),
+      el("button",{class:"secondary",text:"导入黑板",onClick:() => run(async () => {
+        const file = await chooseBoardFile(); return file ? importBoardFile(file) : null;
+      }).then(data => { if (data?.board) return switchBoard(data.board.id); }).catch(error => toast(error.message,true))})),
+    el("p",{class:"dialog-description board-file-description",text:"导出为单个.agentboard文件，包含卡片、交互演示、回收站和资源副本。导入创建新黑板，保留锁定与权限，不覆盖已有内容、不带入目录授权；交互代码在隔离区域运行。"}),rows,errorBox);
   showModal("管理黑板",root,"MANAGE BOARDS",() => !busy);
   await load();
 }

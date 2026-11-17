@@ -356,6 +356,7 @@ INPUTS = {
     "get_operation_status": obj(BOARD | {"command_id": COMMAND}, ("command_id",)),
 }
 USER_INPUTS = {
+    "import_board": obj({"command_id":COMMAND,"archive_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"}},("command_id","archive_sha256")),
     "set_board_lock": obj(WRITE | {"expected_version": VERSION, "locked": BOOL}, tuple(WRITE) + ("expected_version", "locked")),
     "upload_asset": obj(WRITE | {"name": string(255, 1), "data_base64": string(27962028)},
                         tuple(WRITE) + ("name", "data_base64")),
@@ -369,7 +370,7 @@ USER_INPUTS = {
 }
 WRITES = {"push_card", "edit_card", "delete_card", "restore_card", "import_asset",
           "set_card_lock", "update_board", "grant_root", "revoke_root", "upload_asset",
-          "create_board", "rename_board", "duplicate_board", "delete_board", "set_board_lock"}
+          "create_board", "rename_board", "duplicate_board", "delete_board", "set_board_lock", "import_board"}
 DESCRIPTIONS = {
     "list_boards": "分页列出当前身份可访问的活动黑板及删除保护、版本、权限；多黑板时先确认目标标识。",
     "create_board": "创建并自动保存一块独立空黑板，返回新标识；无需board_id，同一command_id重试不重复创建。",

@@ -63,7 +63,11 @@ def create_server(service, host="127.0.0.1", port=8765):
             for key, value in extra.items():
                 self.send_header(key, value)
             self.end_headers()
-            self.wfile.write(content)
+            try:
+                self.wfile.write(content)
+            except (BrokenPipeError,ConnectionResetError,ConnectionAbortedError):
+                # Closing a page/download does not undo an already committed write.
+                self.close_connection = True
 
         def _json(self, status, value):
             self._send(status, dump(value))
@@ -140,6 +144,9 @@ def create_server(service, host="127.0.0.1", port=8765):
                 self._discard_small_body()
                 self._json(403, {"error": "会话或来源无效，请重新连接。"})
                 return
+            if urlsplit(self.path).path in ("/api/boards/export","/api/boards/import","/api/board-files/open","/api/board-files/export"):
+                self._board_files_post()
+                return
             if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
                 self._json(415, {"error": "请求必须为 JSON。"})
                 return
@@ -163,6 +170,59 @@ def create_server(service, host="127.0.0.1", port=8765):
                 self._json(200, response)
             except (ValueError, UnicodeDecodeError, RecursionError):
                 self._json(400, {"error": "请求不是有效 JSON。"})
+
+        def _board_files_post(self):
+            from .board_archive import MAX_ARCHIVE_BYTES
+            from .native_files import choose_file, suggested_name, atomic_save
+            from .schema import validate, obj, ID
+            from urllib.parse import quote
+            path = urlsplit(self.path).path
+            importing = path == "/api/boards/import"
+            try:
+                length = int(self.headers.get("Content-Length","0"))
+                if not 0 < length <= (MAX_ARCHIVE_BYTES if importing else 65536):
+                    raise BusinessError("LIMIT_EXCEEDED","请求为空或超过数据包大小上限。")
+                content_type = self.headers.get("Content-Type","").split(";")[0]
+                if content_type != ("application/octet-stream" if importing else "application/json"):
+                    raise BusinessError("INVALID_ARGUMENT","文件请求类型无效。")
+                self.connection.settimeout(30)
+                raw = self.rfile.read(length)
+                if len(raw) != length: raise BusinessError("INVALID_ARGUMENT","文件上传不完整。")
+                if importing:
+                    result = service.import_board_archive(raw,self.headers.get("X-AgentBoard-Command"),USER)
+                    self._json(200,result); return
+                args = json.loads(raw,parse_constant=reject_constant)
+                validate(args,obj({} if path == "/api/board-files/open" else {"board_id":ID},
+                    () if path == "/api/board-files/open" else ("board_id",)),code="INVALID_ARGUMENT")
+                if path == "/api/board-files/open":
+                    selected = choose_file("open")
+                    if selected is None:
+                        self._send(204,""); return
+                    with selected.open("rb") as stream:
+                        if os.fstat(stream.fileno()).st_size > MAX_ARCHIVE_BYTES:
+                            raise BusinessError("LIMIT_EXCEEDED","数据文件超过256 MiB。")
+                        content = stream.read(MAX_ARCHIVE_BYTES+1)
+                    if len(content) > MAX_ARCHIVE_BYTES: raise BusinessError("LIMIT_EXCEEDED","数据文件超过256 MiB。")
+                    self._send(200,content,"application/octet-stream"); return
+                if path == "/api/board-files/export":
+                    info = service.call("get_board_info",args,USER)
+                    if not info["ok"]:
+                        self._json(400,info); return
+                    selected = choose_file("save",suggested_name(info["data"]["name"]))
+                    if selected is None:
+                        self._json(200,{"ok":True,"data":{"cancelled":True},"meta":{}}); return
+                    content,_ = service.export_board_archive(args["board_id"],USER)
+                    atomic_save(selected,content)
+                    self._json(200,{"ok":True,"data":{"saved":True,"filename":selected.name},"meta":{}}); return
+                content,name = service.export_board_archive(args["board_id"],USER)
+                self._send(200,content,"application/octet-stream",{
+                    "Content-Disposition":"attachment; filename*=UTF-8''"+quote(suggested_name(name))})
+            except BusinessError as error:
+                self._json(400,{"ok":False,"error":error.error,"meta":{}})
+            except (ValueError,UnicodeDecodeError,RecursionError):
+                self._json(400,{"ok":False,"error":BusinessError("INVALID_ARGUMENT","文件请求不是有效JSON。").error,"meta":{}})
+            except OSError:
+                self._json(400,{"ok":False,"error":BusinessError("FILE_IO_ERROR","文件无法读取或保存，请检查权限、文件占用及磁盘空间。").error,"meta":{}})
 
         def _mcp_post(self):
             # A separate credential never grants the browser's USER privileges.

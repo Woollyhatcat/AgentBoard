@@ -120,7 +120,9 @@ class BoardService:
     def _authorize(self, board, actor, tool, args):
         if actor.get("kind") not in ("user", "agent") or not actor.get("id"):
             raise BusinessError("UNAUTHORIZED", "访问身份无效。")
-        if tool in ("list_boards", "create_board") or (tool == "get_operation_status" and not args.get("board_id")):
+        if tool in USER_INPUTS and actor["kind"] != "user":
+            raise BusinessError("FORBIDDEN", "此管理操作只能由用户执行。")
+        if tool in ("list_boards", "create_board", "import_board") or (tool == "get_operation_status" and not args.get("board_id")):
             return
         permissions = self.permissions(board, actor)
         if not permissions["read"]:
@@ -140,7 +142,7 @@ class BoardService:
         if action and not permissions[action]:
             raise BusinessError("FORBIDDEN", "当前身份没有此黑板管理权限。")
 
-    def call(self, tool, args, actor=None):
+    def call(self, tool, args, actor=None, *, _archive=None):
         if tool == "get_board_screenshot":
             from .screenshot import capture_board
             return capture_board(self, args, deepcopy(actor or AGENT))
@@ -155,7 +157,7 @@ class BoardService:
                 raise BusinessError("INVALID_ARGUMENT", "未知操作。")
             if not isinstance(args, dict):
                 raise BusinessError("INVALID_ARGUMENT", "参数必须是对象。")
-            global_call = tool in ("list_boards", "create_board") or (tool == "get_operation_status" and not args.get("board_id"))
+            global_call = tool in ("list_boards", "create_board", "import_board") or (tool == "get_operation_status" and not args.get("board_id"))
             board = self._board(db, "board_local" if global_call else args.get("board_id"))
             if board["schema_version"] != "2.0":
                 raise BusinessError("UNSUPPORTED_SCHEMA", "看板契约已改变，请重新连接 MCP 并刷新网页。")
@@ -191,7 +193,7 @@ class BoardService:
                     if c.get("type") not in TYPES or c.get("type_version") != "1.0":
                         raise BusinessError("UNSUPPORTED_TYPE", "不支持此卡片类型或版本。")
                 validate(args, (INPUTS | USER_INPUTS)[tool], code="INVALID_ARGUMENT")
-                data = self._execute(db, board, actor, tool, args)
+                data = self._execute(db, board, actor, tool, args, _archive)
                 response = {"ok": True, "data": data, "meta": meta}
                 meta["board_revision"] = data.get("revision", data.get("as_of_revision",
                                             data.get("to_revision", 0 if global_call else board["revision"])))
@@ -214,7 +216,10 @@ class BoardService:
         finally:
             db.close()
 
-    def _execute(self, db, board, actor, tool, a):
+    def _execute(self, db, board, actor, tool, a, archive=None):
+        if tool == "import_board":
+            from .board_archive import install_archive
+            return install_archive(self,db,archive,actor)
         if tool == "list_boards":
             if a.get("cursor"):
                 result = self._page(db,actor,tool,a)
@@ -487,9 +492,23 @@ class BoardService:
     def _receipt_access(self, db, actor, tool, response):
         # Creating/copying returns a different board; later revocation also
         # applies to those historical results, including global create receipts.
-        if tool in ("create_board","duplicate_board") and response["ok"]:
+        if tool in ("create_board","duplicate_board","import_board") and response["ok"]:
             target = self._board(db,response["data"]["board"]["id"])
             self._authorize(target,actor,"get_board_info",{"board_id":target["id"]})
+
+    def export_board_archive(self, board_id, actor):
+        from .board_archive import export_board
+        if actor.get("kind") != "user":
+            raise BusinessError("FORBIDDEN","整板文件导出只能由用户执行。")
+        return export_board(self,board_id,actor)
+
+    def import_board_archive(self, raw, command_id, actor):
+        from .board_archive import read_archive
+        if actor.get("kind") != "user":
+            raise BusinessError("FORBIDDEN","整板文件导入只能由用户执行。")
+        validate(command_id,COMMAND,"command_id","INVALID_ARGUMENT")
+        package = read_archive(raw)
+        return self.call("import_board",{"command_id":command_id,"archive_sha256":hashlib.sha256(raw).hexdigest()},actor,_archive=package)
 
     def _duplicate_board(self, db, source, actor, name):
         board = self._create_board(db,name,source["description"],actor)

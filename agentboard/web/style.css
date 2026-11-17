@@ -141,3 +141,4 @@ html:has(.capture-mode),body.capture-mode{min-width:0}
 .board-management-actions .secondary{padding:7px 10px;font-size:11px}.danger{color:var(--red)}
 .root-item>div{min-width:0}.root-item button{flex:none}.root-path{font:11px/1.7 Consolas,monospace;overflow-wrap:anywhere;color:var(--muted);margin-top:5px}
 #current-board-name{display:inline-block;max-width:45vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
+.board-file-toolbar{display:flex;gap:10px;align-items:center}.board-file-description{margin:14px 0 0}
