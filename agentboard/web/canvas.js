@@ -6,6 +6,10 @@ class FreeCanvas {
     this.key = "agentboard:board_local:camera:v2";
     this.prefKey = "agentboard:appearance:v2";
     this.camera = {x: 70, y: 50, zoom: 1};
+    this.cameraTarget = null;
+    this.cameraFrame = null;
+    this.panKeys = new Map();
+    this.reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
     this.prefs = {theme: "light", accent: "green", background: "paper", grid: true, compact: false, snap: false};
     try {
       const saved = JSON.parse(localStorage.getItem(this.key));
@@ -22,6 +26,7 @@ class FreeCanvas {
     try { localStorage.setItem(this.key, JSON.stringify(this.camera)); } catch { /* Private browsing. */ }
   }
   switchBoard(id) {
+    this.stopCameraMotion();
     this.store();
     this.key = `agentboard:${id}:camera:v2`;
     this.camera = {x:70,y:50,zoom:1}; this.ready = false; this.restored = false; this.userMoved = false;
@@ -66,36 +71,101 @@ class FreeCanvas {
       y: (clientY - rect.top - this.camera.y) / this.camera.zoom};
   }
   zoomAt(value, x = this.width() / 2, y = this.viewport.clientHeight / 2) {
-    const previous = this.camera.zoom, zoom = Math.max(.1, Math.min(4, value));
-    this.camera.x = x - (x - this.camera.x) * zoom / previous;
-    this.camera.y = y - (y - this.camera.y) * zoom / previous;
-    this.camera.zoom = zoom; this.userMoved = true; this.paint(); this.store();
+    const zoom = Math.max(.1, Math.min(4, value));
+    if (zoom === (this.cameraTarget?.zoom ?? this.camera.zoom)) return;
+    const ratio = zoom / this.camera.zoom;
+    this.userMoved = true;
+    this.moveCamera({x: x - (x - this.camera.x) * ratio, y: y - (y - this.camera.y) * ratio, zoom}, true);
+  }
+  zoomBy(factor, x, y) {
+    this.zoomAt((this.cameraTarget?.zoom ?? this.camera.zoom) * factor, x, y);
+  }
+  moveCamera(destination, smooth) {
+    if (smooth && !this.reducedMotion.matches) {
+      this.cameraTarget = destination;
+      this.requestCameraFrame();
+      return;
+    }
+    this.stopCameraMotion();
+    this.camera = destination;
+    this.paint();
+    this.store();
+  }
+  stopCameraMotion() {
+    if (this.cameraFrame !== null) cancelAnimationFrame(this.cameraFrame);
+    this.cameraFrame = null;
+    this.cameraTarget = null;
+    this.panKeys.clear();
+  }
+  requestCameraFrame() {
+    if (this.cameraFrame !== null) return;
+    this.cameraTime = performance.now();
+    this.cameraFrame = requestAnimationFrame(this.animateCamera);
+  }
+  animateCamera = time => {
+    // Limit the movement per frame when the browser has been busy or hidden.
+    const elapsed = Math.max(0, Math.min(32, time - this.cameraTime));
+    this.cameraTime = time;
+    const target = this.cameraTarget;
+    let x = 0;
+    let y = 0;
+    for (const direction of this.panKeys.values()) {
+      x += direction[0];
+      y += direction[1];
+    }
+    x = Math.sign(x);
+    y = Math.sign(y);
+    const distance = .36 * elapsed / (Math.hypot(x, y) || 1);
+    target.x += x * distance;
+    target.y += y * distance;
+
+    const blend = this.reducedMotion.matches ? 1 : -Math.expm1(-elapsed / 42);
+    const next = {
+      x: this.camera.x + (target.x - this.camera.x) * blend,
+      y: this.camera.y + (target.y - this.camera.y) * blend,
+      zoom: this.camera.zoom + (target.zoom - this.camera.zoom) * blend,
+    };
+    const settled = Math.abs(target.x - next.x) < .2 && Math.abs(target.y - next.y) < .2 &&
+      Math.abs(target.zoom - next.zoom) < .0005;
+    this.camera = settled ? {...target} : next;
+    this.paint();
+
+    if (this.panKeys.size || !settled) {
+      this.cameraFrame = requestAnimationFrame(this.animateCamera);
+    } else {
+      this.cameraFrame = null;
+      this.cameraTarget = null;
+      this.store();
+    }
   }
   rect(card) {
     const node = document.getElementById(card.id);
     return {...card.layout, h: node?.offsetHeight || card.layout.h};
   }
-  fit(cards = this.getCards(), allowEnlarge = false) {
-    if (!cards.length) { this.origin(); return; }
+  fit(cards = this.getCards(), allowEnlarge = false, smooth = false) {
+    if (!cards.length) { this.origin(smooth); return; }
     const boxes = cards.map(card => this.rect(card));
     const left = Math.min(...boxes.map(box => box.x)), top = Math.min(...boxes.map(box => box.y));
     const right = Math.max(...boxes.map(box => box.x + box.w)), bottom = Math.max(...boxes.map(box => box.y + box.h));
     const zoom = Math.max(.1, Math.min(allowEnlarge ? 2 : 1, (this.width() - 80) / (right - left),
       (this.viewport.clientHeight - 80) / (bottom - top)));
-    this.camera = {x: this.width() / 2 - (left + right) / 2 * zoom,
-      y: this.viewport.clientHeight / 2 - (top + bottom) / 2 * zoom, zoom};
-    this.paint(); this.store();
+    this.moveCamera({x: this.width() / 2 - (left + right) / 2 * zoom,
+      y: this.viewport.clientHeight / 2 - (top + bottom) / 2 * zoom, zoom}, smooth);
   }
   initialFit() {
     if (this.ready || !this.getCards().length) return;
     this.ready = true;
     if (!this.restored && !this.userMoved) {
-      requestAnimationFrame(() => { if (!this.userMoved) this.fit(); });
-      document.fonts?.ready.then(() => { if (!this.userMoved && !this.restored) this.fit(); });
+      const boardKey = this.key;
+      const fitOnLoad = () => {
+        if (this.key === boardKey && !this.userMoved && !this.restored) this.fit();
+      };
+      requestAnimationFrame(fitOnLoad);
+      document.fonts?.ready.then(fitOnLoad);
     }
   }
-  origin() { this.camera = {x: 70, y: 50, zoom: 1}; this.userMoved = true; this.paint(); this.store(); }
-  focus(card) { this.userMoved = true; this.fit([card], true); }
+  origin(smooth = false) { this.userMoved = true; this.moveCamera({x: 70, y: 50, zoom: 1}, smooth); }
+  focus(card) { this.userMoved = true; this.fit([card], true, true); }
   placement(kind, size) {
     const rect = this.viewport.getBoundingClientRect();
     const center = this.toWorld(rect.left + this.width() / 2, rect.top + this.viewport.clientHeight / 2);
@@ -124,37 +194,55 @@ class FreeCanvas {
       ["s", [0, -1]], ["arrowdown", [0, -1]],
       ["d", [-1, 0]], ["arrowright", [-1, 0]],
     ]);
+    const usesKeyboard = target => target.isContentEditable ||
+      target.closest?.("input,textarea,select,button,a,dialog,#inspector");
     // Focus/scrollIntoView inside embedded programs must not move the world by
     // changing the browser's native scroll offset behind the saved camera.
     this.viewport.addEventListener("scroll",() => {
       if (this.viewport.scrollLeft || this.viewport.scrollTop) this.viewport.scrollTo(0,0);
     });
     document.addEventListener("keydown", event => {
-      if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey ||
-          event.target.isContentEditable ||
-          event.target.closest("input,textarea,select,button,a,dialog,#inspector")) return;
+      if (event.defaultPrevented || event.isComposing || usesKeyboard(event.target)) return;
+      if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) { this.panKeys.clear(); return; }
       if (event.code === "Space") {
         this.space = true; this.viewport.classList.add("pan-ready"); event.preventDefault();
         return;
       }
       const direction = panDirections.get(event.key.toLowerCase());
-      if (!direction || event.shiftKey || this.viewport.classList.contains("panning") ||
+      if (!direction || this.viewport.classList.contains("panning") ||
           document.body.classList.contains("card-dragging")) return;
       event.preventDefault();
-      // The camera looks farther in the requested direction, so the world moves oppositely.
-      const step = 48;
-      this.camera.x += direction[0] * step;
-      this.camera.y += direction[1] * step;
+      if (event.repeat) return;
+      this.cameraTarget ??= {...this.camera};
+      if (!this.panKeys.size) {
+        // Give a tap a short travel distance even if released before the first frame.
+        this.cameraTarget.x += direction[0] * 32;
+        this.cameraTarget.y += direction[1] * 32;
+      }
+      this.panKeys.set(event.code || event.key, direction);
       this.userMoved = true;
-      this.paint();
-      this.store();
+      this.requestCameraFrame();
     });
-    document.addEventListener("keyup", event => { if (event.code === "Space") { this.space = false; this.viewport.classList.remove("pan-ready"); } });
-    window.addEventListener("blur", () => { this.space = false; this.viewport.classList.remove("pan-ready"); });
+    document.addEventListener("keyup", event => {
+      this.panKeys.delete(event.code || event.key);
+      if (event.code === "Space") { this.space = false; this.viewport.classList.remove("pan-ready"); }
+    });
+    document.addEventListener("focusin", event => {
+      if (usesKeyboard(event.target)) this.panKeys.clear();
+    });
+    window.addEventListener("blur", () => {
+      this.panKeys.clear();
+      this.space = false;
+      this.viewport.classList.remove("pan-ready");
+    });
+    window.addEventListener("pagehide", () => {
+      if (this.cameraFrame !== null) this.store();
+    });
     this.viewport.addEventListener("pointerdown", event => {
       const blank = !event.target.closest(".card,button,input,textarea,select,a,.canvas-controls,.empty");
       if (!(event.button === 1 || (event.button === 0 && (blank || this.space)))) return;
       event.preventDefault(); event.stopPropagation();
+      this.stopCameraMotion();
       if (blank && event.button === 0) this.viewport.focus({preventScroll: true});
       const before = {...this.camera}, x = event.clientX, y = event.clientY;
       this.viewport.setPointerCapture(event.pointerId); this.viewport.classList.add("panning");
@@ -188,7 +276,7 @@ class FreeCanvas {
       if (!event.deltaY) return;
       const pixelsPerUnit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.viewport.clientHeight : 1;
       const rect = this.viewport.getBoundingClientRect();
-      this.zoomAt(this.camera.zoom * Math.exp(-event.deltaY * pixelsPerUnit * .002),
+      this.zoomBy(Math.exp(-event.deltaY * pixelsPerUnit * .002),
         event.clientX - rect.left, event.clientY - rect.top);
     }, {passive: false});
     new ResizeObserver(() => this.paint()).observe(this.viewport);
@@ -199,11 +287,11 @@ class FreeCanvas {
       const button = document.createElement("button"); button.textContent = text; button.title = title;
       button.setAttribute("aria-label", title); button.addEventListener("click", action); controls.append(button); return button;
     };
-    add("−", "缩小画布", () => this.zoomAt(this.camera.zoom / 1.2));
+    add("−", "缩小画布", () => this.zoomBy(1 / 1.2));
     this.zoomLabel = add("100%", "恢复100%缩放", () => this.zoomAt(1));
-    add("＋", "放大画布", () => this.zoomAt(this.camera.zoom * 1.2));
-    add("查看全部", "适配全部卡片", () => { this.userMoved = true; this.fit(); });
-    add("原点", "返回画布原点", () => this.origin());
+    add("＋", "放大画布", () => this.zoomBy(1.2));
+    add("查看全部", "适配全部卡片", () => { this.userMoved = true; this.fit(this.getCards(), false, true); });
+    add("原点", "返回画布原点", () => this.origin(true));
     add("定位", "定位选中卡片", () => {
       const card = this.getCards().find(item => item.id === this.getSelected()); if (card) this.focus(card);
     });

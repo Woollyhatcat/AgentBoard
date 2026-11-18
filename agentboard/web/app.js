@@ -1286,6 +1286,8 @@ function connectionDialog() {
 function startDrag(event, card, resizing) {
   if (event.button !== 0 || blocked(card) || app.inline.has(card.id) || app.dragging) return;
   event.preventDefault(); event.stopPropagation();
+  space.stopCameraMotion();
+  space.store();
   const handle = event.currentTarget, node = cardElement(card.id), original = clone(card.layout);
   const x0 = event.clientX, y0 = event.clientY, zoom = space.camera.zoom, initialHeight = node.offsetHeight;
   app.dragging = card.id; document.body.classList.add("card-dragging");
