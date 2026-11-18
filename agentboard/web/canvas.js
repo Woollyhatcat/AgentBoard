@@ -1,5 +1,7 @@
 "use strict";
 
+const CAMERA_SPEED = {min: .5, max: 2, step: .1, default: 1};
+
 class FreeCanvas {
   constructor(viewport, world, getCards, getSelected) {
     this.viewport = viewport; this.world = world; this.getCards = getCards; this.getSelected = getSelected;
@@ -10,7 +12,8 @@ class FreeCanvas {
     this.cameraFrame = null;
     this.panKeys = new Map();
     this.reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
-    this.prefs = {theme: "light", accent: "green", background: "paper", grid: true, compact: false, snap: false};
+    this.prefs = {theme: "light", accent: "green", background: "paper", grid: true, compact: false, snap: false,
+      cameraSpeed: CAMERA_SPEED.default};
     try {
       const saved = JSON.parse(localStorage.getItem(this.key));
       if (saved && [saved.x, saved.y, saved.zoom].every(Number.isFinite) && saved.zoom >= .1 && saved.zoom <= 4) {
@@ -19,6 +22,10 @@ class FreeCanvas {
       const prefs = JSON.parse(localStorage.getItem(this.prefKey));
       if (prefs && typeof prefs === "object") Object.assign(this.prefs, prefs);
     } catch { /* Storage is optional; the live canvas remains usable. */ }
+    const speed = this.prefs.cameraSpeed;
+    this.prefs.cameraSpeed = Number.isFinite(speed)
+      ? Math.round(Math.max(CAMERA_SPEED.min, Math.min(CAMERA_SPEED.max, speed)) * 10) / 10
+      : CAMERA_SPEED.default;
     this.installControls(); this.bindInput(); this.applyPrefs(); this.paint();
     this.ready = false;
   }
@@ -106,6 +113,7 @@ class FreeCanvas {
     // Limit the movement per frame when the browser has been busy or hidden.
     const elapsed = Math.max(0, Math.min(32, time - this.cameraTime));
     this.cameraTime = time;
+    const motionTime = elapsed * this.prefs.cameraSpeed;
     const target = this.cameraTarget;
     let x = 0;
     let y = 0;
@@ -115,11 +123,11 @@ class FreeCanvas {
     }
     x = Math.sign(x);
     y = Math.sign(y);
-    const distance = .36 * elapsed / (Math.hypot(x, y) || 1);
+    const distance = .36 * motionTime / (Math.hypot(x, y) || 1);
     target.x += x * distance;
     target.y += y * distance;
 
-    const blend = this.reducedMotion.matches ? 1 : -Math.expm1(-elapsed / 42);
+    const blend = this.reducedMotion.matches ? 1 : -Math.expm1(-motionTime / 42);
     const next = {
       x: this.camera.x + (target.x - this.camera.x) * blend,
       y: this.camera.y + (target.y - this.camera.y) * blend,
@@ -302,7 +310,7 @@ class FreeCanvas {
   }
   preferences() {
     const panel = document.createElement("div"); panel.className = "appearance-form";
-    const title = document.createElement("h3"); title.textContent = "本机显示风格"; panel.append(title);
+    const title = document.createElement("h3"); title.textContent = "本机显示与相机"; panel.append(title);
     const options = {
       theme: ["明暗主题", [["light", "浅色"], ["dark", "深色"]]],
       accent: ["主题色", [["green", "松绿"], ["blue", "海蓝"], ["purple", "紫色"], ["amber", "琥珀"]]],
@@ -320,8 +328,42 @@ class FreeCanvas {
       const checkbox = document.createElement("input"); checkbox.type = "checkbox"; checkbox.checked = !!this.prefs[key];
       checkbox.addEventListener("change", () => { this.prefs[key] = checkbox.checked; this.applyPrefs(); }); label.append(checkbox, name); panel.append(label);
     }
+    const speedField = document.createElement("div");
+    speedField.className = "field camera-speed";
+    const speedHeader = document.createElement("div");
+    speedHeader.className = "camera-speed-header";
+    const speedLabel = document.createElement("label");
+    speedLabel.htmlFor = "camera-speed";
+    speedLabel.textContent = "相机运动速度";
+    const speedValue = document.createElement("span");
+    speedValue.setAttribute("aria-hidden", "true");
+    speedHeader.append(speedLabel, speedValue);
+    const speedInput = document.createElement("input");
+    speedInput.id = "camera-speed";
+    speedInput.type = "range";
+    speedInput.min = CAMERA_SPEED.min;
+    speedInput.max = CAMERA_SPEED.max;
+    speedInput.step = CAMERA_SPEED.step;
+    speedInput.value = this.prefs.cameraSpeed;
+    speedInput.setAttribute("aria-describedby", "camera-speed-help");
+    const speedHelp = document.createElement("small");
+    speedHelp.id = "camera-speed-help";
+    speedHelp.textContent = "调节键盘平移速度，以及缩放和定位的过渡速度。";
+    const showSpeed = () => {
+      const value = speedInput.valueAsNumber.toFixed(1);
+      speedValue.textContent = value + "×";
+      speedInput.setAttribute("aria-valuetext", value + " 倍");
+    };
+    showSpeed();
+    speedInput.addEventListener("input", () => {
+      this.prefs.cameraSpeed = speedInput.valueAsNumber;
+      showSpeed();
+      this.applyPrefs();
+    });
+    speedField.append(speedHeader, speedInput, speedHelp);
+    panel.append(speedField);
     const note = document.createElement("p"); note.className = "dialog-description";
-    note.textContent = "显示风格和相机仅在本机保存。正文基准字号在卡片属性中设置，并与 Agent 共享。"; panel.append(note);
+    note.textContent = "显示风格和相机设置保存在当前浏览器。正文基准字号在卡片属性中设置，并与 Agent 共享。"; panel.append(note);
     return panel;
   }
 }

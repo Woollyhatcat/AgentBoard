@@ -95,6 +95,9 @@ body.sidebar-hidden .app-shell{margin-left:0}
 .empty.compact{min-height:0}
 .appearance-form{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:25px}
 .appearance-form h3{font-size:15px;margin-bottom:18px}
+.camera-speed-header{display:flex;justify-content:space-between;align-items:center}
+.camera-speed-header span{color:var(--ink);font-variant-numeric:tabular-nums}
+.camera-speed input[type=range]{padding:0;border:0;accent-color:var(--green)}
 .field input,.field textarea,.field select{color:var(--ink);background:var(--paper)}
 html[data-compact=true] .card-head{padding:8px 12px 5px}
 html[data-compact=true] .card-body{padding:3px 14px 9px}
