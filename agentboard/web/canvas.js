@@ -54,7 +54,7 @@ class FreeCanvas {
     this.viewport.style.setProperty("--grid-x", x + "px");
     this.viewport.style.setProperty("--grid-y", y + "px");
     if (this.zoomLabel) this.zoomLabel.textContent = Math.round(zoom * 100) + "%";
-    this.viewport.setAttribute("aria-description", `自由画布，缩放 ${Math.round(zoom * 100)}%。空白拖动平移，Ctrl 加滚轮缩放。`);
+    this.viewport.setAttribute("aria-description", `自由画布，缩放 ${Math.round(zoom * 100)}%。用 WASD 或方向键平移，用滚轮缩放。`);
   }
   width() {
     const inspector = document.getElementById("inspector");
@@ -118,15 +118,36 @@ class FreeCanvas {
     });
   }
   bindInput() {
+    const panDirections = new Map([
+      ["w", [0, 1]], ["arrowup", [0, 1]],
+      ["a", [1, 0]], ["arrowleft", [1, 0]],
+      ["s", [0, -1]], ["arrowdown", [0, -1]],
+      ["d", [-1, 0]], ["arrowright", [-1, 0]],
+    ]);
     // Focus/scrollIntoView inside embedded programs must not move the world by
     // changing the browser's native scroll offset behind the saved camera.
     this.viewport.addEventListener("scroll",() => {
       if (this.viewport.scrollLeft || this.viewport.scrollTop) this.viewport.scrollTo(0,0);
     });
     document.addEventListener("keydown", event => {
-      if (event.code === "Space" && !event.target.closest("input,textarea,select,[contenteditable=true],dialog")) {
+      if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey ||
+          event.target.isContentEditable ||
+          event.target.closest("input,textarea,select,button,a,dialog,#inspector")) return;
+      if (event.code === "Space") {
         this.space = true; this.viewport.classList.add("pan-ready"); event.preventDefault();
+        return;
       }
+      const direction = panDirections.get(event.key.toLowerCase());
+      if (!direction || event.shiftKey || this.viewport.classList.contains("panning") ||
+          document.body.classList.contains("card-dragging")) return;
+      event.preventDefault();
+      // The camera looks farther in the requested direction, so the world moves oppositely.
+      const step = 48;
+      this.camera.x += direction[0] * step;
+      this.camera.y += direction[1] * step;
+      this.userMoved = true;
+      this.paint();
+      this.store();
     });
     document.addEventListener("keyup", event => { if (event.code === "Space") { this.space = false; this.viewport.classList.remove("pan-ready"); } });
     window.addEventListener("blur", () => { this.space = false; this.viewport.classList.remove("pan-ready"); });
@@ -134,6 +155,7 @@ class FreeCanvas {
       const blank = !event.target.closest(".card,button,input,textarea,select,a,.canvas-controls,.empty");
       if (!(event.button === 1 || (event.button === 0 && (blank || this.space)))) return;
       event.preventDefault(); event.stopPropagation();
+      if (blank && event.button === 0) this.viewport.focus({preventScroll: true});
       const before = {...this.camera}, x = event.clientX, y = event.clientY;
       this.viewport.setPointerCapture(event.pointerId); this.viewport.classList.add("panning");
       const move = next => {
@@ -151,17 +173,23 @@ class FreeCanvas {
       this.viewport.addEventListener("pointercancel", cancel);
     }, true);
     this.viewport.addEventListener("wheel", event => {
-      if (document.body.classList.contains("card-dragging")) { event.preventDefault(); return; }
-      const body = event.target.closest(".card-body");
-      if (!event.ctrlKey && body && (body.scrollHeight > body.clientHeight || body.scrollWidth > body.clientWidth)) return;
-      event.preventDefault(); this.userMoved = true;
-      if (event.ctrlKey) {
-        const rect = this.viewport.getBoundingClientRect();
-        this.zoomAt(this.camera.zoom * Math.exp(-event.deltaY * .002), event.clientX - rect.left, event.clientY - rect.top);
-      } else {
-        const scale = event.deltaMode === 1 ? 16 : 1;
-        this.camera.x -= event.deltaX * scale; this.camera.y -= event.deltaY * scale; this.paint(); this.store();
+      if (document.body.classList.contains("card-dragging") || this.viewport.classList.contains("panning")) {
+        event.preventDefault();
+        return;
       }
+      const body = event.target.closest(".card-body");
+      if (!event.ctrlKey && !event.metaKey && body) {
+        const style = getComputedStyle(body);
+        const scrolls = (event.deltaY && body.scrollHeight > body.clientHeight && /^(auto|scroll)$/.test(style.overflowY)) ||
+          (event.deltaX && body.scrollWidth > body.clientWidth && /^(auto|scroll)$/.test(style.overflowX));
+        if (scrolls) return;
+      }
+      event.preventDefault();
+      if (!event.deltaY) return;
+      const pixelsPerUnit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.viewport.clientHeight : 1;
+      const rect = this.viewport.getBoundingClientRect();
+      this.zoomAt(this.camera.zoom * Math.exp(-event.deltaY * pixelsPerUnit * .002),
+        event.clientX - rect.left, event.clientY - rect.top);
     }, {passive: false});
     new ResizeObserver(() => this.paint()).observe(this.viewport);
   }
