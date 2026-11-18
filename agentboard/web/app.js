@@ -137,6 +137,7 @@ function setConnection(value) {
   }
   for (const card of app.cards.values()) updateCardDisabled(card);
   if (app.editor) refreshConflict();
+  refreshCardManager?.();
   updateSaveStatus();
 }
 
@@ -207,6 +208,7 @@ async function mutate(tool, args, {cardId = null, onSuccess = null} = {}) {
     throw error;
   } finally {
     if (cardId) updateCardDisabled(app.cards.get(cardId));
+    refreshCardManager?.();
     updateSaveStatus();
   }
 }
@@ -310,6 +312,7 @@ function renderBoardNavigation() {
 }
 
 function resetBoard(id) {
+  if (refreshCardManager) closeModal();
   closeEditor();
   for (const record of interactive.records.values()) { clearTimeout(record.timer); interactive.halt(record); }
   interactive.records.clear();
@@ -375,6 +378,7 @@ function applyCard(card, external = false) {
 function updateCounts() {
   const count = [...app.cards.values()].filter(card => card.lifecycle === "active").length;
   $("#nav-count").textContent = count;
+  $("#manage-cards-btn").disabled = !app.boardId || !app.loaded;
   const visible = [...app.cards.values()].filter(matches);
   $("#empty").hidden = count !== 0;
   $("#no-results").hidden = !(count > 0 && visible.length === 0);
@@ -382,7 +386,10 @@ function updateCounts() {
 }
 
 function matches(card) {
-  return card.lifecycle === "active" && (!app.query || card.id === app.query || card.title.toLocaleLowerCase().includes(app.query.toLocaleLowerCase()));
+  return card.lifecycle === "active" && matchesCardQuery(card, app.query);
+}
+function matchesCardQuery(card, query) {
+  return !query || card.id === query || card.title.toLocaleLowerCase().includes(query.toLocaleLowerCase());
 }
 function renderGrid() {
   $("#canvas").replaceChildren();
@@ -557,9 +564,11 @@ async function commitInline(id) {
 }
 
 let modalOnClose = null;
+let refreshCardManager = null;
 function showModal(title, content, eyebrow = "AGENTBOARD", close = null) {
   app.modalDirty = false;
   modalOnClose = close;
+  refreshCardManager = null;
   $("#modal-title").textContent = title;
   $("#modal-eyebrow").textContent = eyebrow;
   $("#modal-body").replaceChildren(content);
@@ -567,7 +576,7 @@ function showModal(title, content, eyebrow = "AGENTBOARD", close = null) {
 }
 function closeModal() {
   if (modalOnClose && modalOnClose() === false) return;
-  $("#modal").close(); modalOnClose = null; app.modalDirty = false; updateSaveStatus();
+  $("#modal").close(); modalOnClose = null; refreshCardManager = null; app.modalDirty = false; updateSaveStatus();
 }
 $("#modal-close").addEventListener("click", closeModal);
 $("#modal").addEventListener("cancel", event => { event.preventDefault(); closeModal(); });
@@ -893,49 +902,123 @@ function locate(id) {
   cardElement(id)?.classList.add("flash"); selectCard(id);
 }
 
-async function changeLayout(id, patch) {
+async function changeLayout(id, patch, done = closeModal) {
   const card = app.cards.get(id);
   try {
     await mutate("edit_card", {card_id:id, expected_layout_version:card.layout_version,
       changes:{layout:{space:"world",...patch}}}, {cardId:id});
-    closeModal(); toast("布局已保存。");
+    done(); toast("布局已保存。");
   } catch(error) { toast(error.message,true); }
 }
 
-function cardMenu(id) {
+function manageCardsDialog({query = "", type = ""} = {}) {
+  const search = el("input", {type: "search", value: query, placeholder: "搜索标题或完整标识", "aria-label": "搜索卡片列表"});
+  const typeFilter = el("select", {"aria-label": "筛选卡片类型"},
+    el("option", {value: "", text: "全部类型"}),
+    Object.entries(TYPES).map(([value, {label}]) => el("option", {value, text: label})));
+  typeFilter.value = type;
+  const count = el("p", {class: "card-manager-count", role: "status"});
+  const list = el("ul", {class: "card-manager-list", "aria-label": "当前黑板的卡片"});
+  const root = el("div", {}, el("div", {class: "card-manager-filters"},
+    el("label", {class: "search"}, el("span", {text: "⌕", "aria-hidden": "true"}), search),
+    el("label", {class: "field"}, typeFilter)), count, list);
+  let previousRows;
+  const render = () => {
+    const boardName = app.info?.name || "当前黑板";
+    const eyebrow = $("#modal-eyebrow");
+    if (eyebrow.textContent !== boardName) eyebrow.textContent = boardName;
+    const cards = [...app.cards.values()].filter(card => card.lifecycle === "active");
+    const items = cards.filter(card => matchesCardQuery(card, search.value.trim()) && (!typeFilter.value || card.type === typeFilter.value));
+    items.sort((a, b) => a.title.localeCompare(b.title, "zh-CN") || a.id.localeCompare(b.id));
+    let status = `${cards.length} 张卡片`;
+    if (!cards.length) status = "当前黑板没有卡片。";
+    else if (!items.length) status = "没有匹配的卡片。";
+    else if (items.length !== cards.length) status = `${items.length} / ${cards.length} 张卡片`;
+    if (count.textContent !== status) count.textContent = status;
+    const rows = items.map(card => [card.id, card.title, card.type, card.locked, !app.connected || cardBusy(card.id)]);
+    if (equal(rows, previousRows)) return;
+    previousRows = rows;
+    const focus = list.contains(document.activeElement) ? document.activeElement.dataset.focusKey : null;
+    list.replaceChildren(...rows.map(([id, title, type, locked, unavailable]) => {
+      const button = (label, action, disabled = false) => el("button", {class: "secondary", text: label, disabled,
+        "aria-label": `${label}「${title}」`, data: {focusKey: id + label}, onClick: action});
+      return el("li", {class: "list-item"},
+        el("div", {class: "card-manager-details"}, el("strong", {text: title}),
+          el("p", {text: TYPES[type]?.label || type}, locked ? el("span", {text: " · 已锁定"}) : null),
+          el("code", {text: id})),
+        el("div", {class: "actions"},
+          button("定位", () => { closeModal(); locate(id); }),
+          button("编辑", () => { closeModal(); selectCard(id); }, locked || unavailable),
+          button("更多操作", () => {
+            const filters = {query: search.value, type: typeFilter.value};
+            cardMenu(id, () => manageCardsDialog(filters));
+          })));
+    }));
+    if (focus) ($$("button:not(:disabled)", list).find(button => button.dataset.focusKey === focus) || search).focus({preventScroll: true});
+  };
+  showModal("卡片管理", root, app.info?.name || "当前黑板");
+  refreshCardManager = render;
+  search.addEventListener("input", render);
+  typeFilter.addEventListener("change", render);
+  render();
+  search.focus();
+}
+
+function cardMenu(id, back = null) {
   const card = app.cards.get(id);
-  if (!card) return;
+  if (!card || card.lifecycle !== "active") { back?.(); return; }
   const root = el("div", {}, el("p", {class: "dialog-description", text: `${TYPES[card.type]?.label || card.type} · v${card.version} · ${card.id}`}));
+  const boardId = app.boardId;
+  const done = back ? () => {
+    if (app.boardId === boardId && root.isConnected && $("#modal").open) back();
+  } : closeModal;
   for (const [label, action, disabled] of [
     ["编辑卡片", () => { closeModal(); selectCard(id); }, card.locked],
     ["复制卡片标识", () => copy(id), false],
     ["定位卡片", () => { closeModal(); locate(id); }, false],
-    ["置于最上层", () => changeLayout(id, {z: Math.max(0, ...space.getCards().map(item => item.layout.z || 0)) + 1}), blocked(card)],
-    ["置于最下层", () => changeLayout(id, {z: Math.min(0, ...space.getCards().map(item => item.layout.z || 0)) - 1}), blocked(card)],
+    ["置于最上层", () => changeLayout(id, {z: Math.max(0, ...space.getCards().map(item => item.layout.z || 0)) + 1}, done), blocked(card)],
+    ["置于最下层", () => changeLayout(id, {z: Math.min(0, ...space.getCards().map(item => item.layout.z || 0)) - 1}, done), blocked(card)],
     ...(card.type === "text" ? [
-      ["正文按内容自适应", () => changeLayout(id, {height_mode: "auto"}), blocked(card)],
-      ["完整展开正文", () => changeLayout(id, {height_mode: "expanded"}), blocked(card)],
-      ["固定当前高度", () => changeLayout(id, {height_mode: "fixed", h: cardElement(id).offsetHeight}), blocked(card)],
+      ["正文按内容自适应", () => changeLayout(id, {height_mode: "auto"}, done), blocked(card)],
+      ["完整展开正文", () => changeLayout(id, {height_mode: "expanded"}, done), blocked(card)],
+      ["固定当前高度", () => {
+        const node = cardElement(id);
+        if (node) changeLayout(id, {height_mode: "fixed", h: node.offsetHeight}, done);
+      }, blocked(card) || !cardElement(id)],
     ] : []),
     [card.locked ? "显式解锁卡片" : "锁定卡片", () => guardEditor(async () => {
-      try { await mutate("set_card_lock", {card_id: id, expected_version: card.version, locked: !card.locked}, {cardId: id}); closeModal(); toast(card.locked ? "卡片已解锁。" : "卡片已锁定，双方仍可读取。"); }
+      try { await mutate("set_card_lock", {card_id: id, expected_version: card.version, locked: !card.locked}, {cardId: id}); done(); toast(card.locked ? "卡片已解锁。" : "卡片已锁定，双方仍可读取。"); }
       catch (error) { toast(error.message, true); }
     }), !app.connected || cardBusy(id)],
-    ["删除（可从回收站恢复）", () => deleteDialog(id), card.locked || !app.connected || cardBusy(id)],
-  ]) root.append(el("button", {class: "nav-item", text: label, disabled, onClick: action}));
+    ["删除（可从回收站恢复）", () => deleteDialog(id, back), card.locked || !app.connected || cardBusy(id)],
+  ]) root.append(el("button", {class: "nav-item", text: label, disabled, onClick: () => {
+    if (app.boardId === boardId && app.cards.get(id)?.lifecycle === "active") action();
+    else (back || closeModal)();
+  }}));
+  if (back) root.append(el("div", {class: "modal-actions"}, el("button", {class: "secondary", text: "返回卡片列表", onClick: back})));
   showModal(card.title, root, "CARD ACTIONS");
 }
 
-function deleteDialog(id) {
+function deleteDialog(id, back = null) {
   guardEditor(() => {
     const card = app.cards.get(id), errorBox = el("p", {class: "field-error", role: "alert"});
+    if (!card || card.lifecycle !== "active") { back?.(); return; }
+    const boardId = app.boardId;
     const submit = el("button", {class: "danger", text: "移至回收站", onClick: async () => {
+      if (app.boardId !== boardId || app.cards.get(id)?.lifecycle !== "active") {
+        (back || closeModal)(); return;
+      }
       submit.disabled = true;
       try { await mutate("delete_card", {card_id: id, expected_version: card.version}, {cardId: id,
-        onSuccess: () => { if (app.editor?.base.id === id) closeEditor(); closeModal(); toast("已移至回收站，原文件和资源均保留。"); }}); }
+        onSuccess: () => {
+          if (app.editor?.base.id === id) closeEditor();
+          if (back && submit.isConnected && $("#modal").open) back();
+          else if (!back) closeModal();
+          toast("已移至回收站，原文件和资源均保留。");
+        }}); }
       catch (error) { errorBox.textContent = error.message; submit.disabled = false; }
     }});
-    showModal("删除「" + card.title + "」？", el("div", {}, el("p", {class: "dialog-description", text: "卡片将移出当前看板，可随时从回收站恢复。删除卡片不会删除原文件或共享资源。"}), errorBox, el("div", {class: "modal-actions"}, el("button", {class: "secondary", text: "取消", onClick: closeModal}), submit)));
+    showModal("删除「" + card.title + "」？", el("div", {}, el("p", {class: "dialog-description", text: "卡片将移出当前看板，可随时从回收站恢复。删除卡片不会删除原文件或共享资源。"}), errorBox, el("div", {class: "modal-actions"}, el("button", {class: "secondary", text: "取消", onClick: back || closeModal}), submit)));
   });
 }
 
@@ -1344,6 +1427,7 @@ async function examples() {
 $("#search").addEventListener("input", event => { app.query = event.target.value.trim(); renderGrid(); });
 $("#clear-search").addEventListener("click", () => { $("#search").value = ""; app.query = ""; renderGrid(); });
 $("#add-btn").addEventListener("click", chooseType);
+$("#manage-cards-btn").addEventListener("click", () => manageCardsDialog());
 $("#first-card-btn").addEventListener("click", chooseType);
 $("#example-btn").addEventListener("click", examples);
 $("#copy-board").addEventListener("click", () => copy(app.boardId));

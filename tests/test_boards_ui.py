@@ -13,6 +13,89 @@ from agentboard.service import BoardService, USER
 
 @unittest.skipUnless(importlib.util.find_spec("playwright"),"Browser acceptance requires Playwright")
 class BoardUITests(unittest.TestCase):
+    def test_card_manager_filters_and_manages_cards_outside_canvas_search(self):
+        from playwright.sync_api import sync_playwright, expect, Error as BrowserError
+
+        with tempfile.TemporaryDirectory() as directory:
+            service = BoardService(directory)
+
+            def push_card(title, card_type, props, state):
+                result = service.call("push_card", {
+                    "board_id": "board_local", "command_id": str(uuid4()),
+                    "card": {"type": card_type, "type_version": "1.0", "title": title,
+                             "props": props, "state": state},
+                }, USER)
+                self.assertTrue(result["ok"], result)
+                return result["data"]["card"]["id"]
+
+            card_id = push_card("项目说明", "text", {"format": "markdown"}, {"text": "正文"})
+            push_card("验收进度", "checkbox", {"label": "已完成"}, {"checked": False})
+            server = create_server(service, port=0)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with sync_playwright() as playwright:
+                    for channel in ("msedge", "chrome", None):
+                        try:
+                            browser = playwright.chromium.launch(channel=channel, headless=True)
+                            break
+                        except BrowserError:
+                            continue
+                    else:
+                        self.skipTest("Browser acceptance requires Edge/Chrome or Playwright Chromium")
+
+                    try:
+                        page = browser.new_page(viewport={"width": 960, "height": 800})
+                        errors = []
+                        page.on("pageerror", lambda error: errors.append(str(error)))
+                        page.goto(f"http://127.0.0.1:{server.server_address[1]}/")
+                        page.wait_for_function("() => app.connected && app.loaded")
+                        page.locator("#search").fill("验收")
+                        expect(page.locator("#canvas article")).to_have_count(1)
+                        page.locator("#manage-cards-btn").click()
+                        manager = page.get_by_role("dialog", name="卡片管理")
+                        rows = manager.get_by_role("listitem")
+                        search = manager.get_by_role("searchbox")
+                        expect(rows).to_have_count(2)
+                        push_card("更新说明", "text", {}, {"text": "新内容"})
+                        expect(rows).to_have_count(3)
+                        expect(search).to_be_focused()
+                        manager.get_by_label("筛选卡片类型").select_option("text")
+                        expect(rows).to_have_count(2)
+                        search.fill(card_id)
+                        expect(rows).to_have_count(1)
+
+                        more = manager.get_by_role("button", name="更多操作「项目说明」")
+                        more.click()
+                        page.get_by_role("button", name="锁定卡片", exact=True).click()
+                        expect(rows).to_have_count(1)
+                        expect(search).to_have_value(card_id)
+                        expect(manager.get_by_role("button", name="编辑「项目说明」")).to_be_disabled()
+                        more.click()
+                        page.get_by_role("button", name="显式解锁卡片", exact=True).click()
+                        expect(manager.get_by_role("button", name="编辑「项目说明」")).to_be_enabled()
+                        manager.get_by_role("button", name="编辑「项目说明」").click()
+                        expect(page.locator('#inspector [name="title"]')).to_have_value("项目说明")
+                        expect(page.locator("#search")).to_have_value("验收")
+
+                        page.locator("#manage-cards-btn").click()
+                        manager.get_by_role("button", name="定位「项目说明」").click()
+                        expect(page.locator("#search")).to_have_value("")
+                        expect(page.locator("#canvas").get_by_text("项目说明", exact=True)).to_be_visible()
+                        page.locator("#manage-cards-btn").click()
+                        more.click()
+                        page.get_by_role("button", name="删除（可从回收站恢复）").click()
+                        page.get_by_role("button", name="移至回收站").click()
+                        expect(rows).to_have_count(2)
+                        expect(manager.get_by_text("项目说明", exact=True)).to_have_count(0)
+                        self.assertEqual(errors, [])
+                    finally:
+                        browser.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(3)
+
     def test_archive_buttons_file_picker_cancel_and_lost_import_reply(self):
         from playwright.sync_api import sync_playwright, expect, Error as BrowserError
         with tempfile.TemporaryDirectory() as directory:

@@ -145,3 +145,18 @@ html:has(.capture-mode),body.capture-mode{min-width:0}
 .root-item>div{min-width:0}.root-item button{flex:none}.root-path{font:11px/1.7 Consolas,monospace;overflow-wrap:anywhere;color:var(--muted);margin-top:5px}
 #current-board-name{display:inline-block;max-width:45vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
 .board-file-toolbar{display:flex;gap:10px;align-items:center}.board-file-description{margin:14px 0 0}
+.card-manager-filters{display:flex;flex-wrap:wrap;gap:10px}
+.card-manager-filters .search{flex:1;min-width:160px}
+.card-manager-filters .search input{flex:1;width:100%}
+.card-manager-filters .field{margin:0}
+.card-manager-filters select{height:100%;background:var(--paper);border-color:var(--line)}
+.card-manager-count{margin:14px 0;color:var(--muted);font-size:12px}
+.card-manager-list{margin:0;padding:0;list-style:none}
+.card-manager-list .list-item{flex-wrap:wrap;margin-bottom:8px}
+.card-manager-list .list-item:last-child{margin-bottom:0}
+.card-manager-details{flex:1;min-width:0;overflow-wrap:anywhere}
+.card-manager-details strong{font-size:13px;font-weight:600}
+.card-manager-details p{margin-top:3px;font-size:11px;color:var(--muted)}
+.card-manager-details code{color:var(--muted);font-size:10px}
+.card-manager-list .actions{flex-wrap:wrap}
+.card-manager-list .secondary{padding:6px 10px;font-size:11px}
